@@ -19,7 +19,11 @@ interface Props {
 export function HandSkeleton({ frame, videoRef, status }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>(0);
+  // Store latest frame in a ref so the RAF loop can read it without restarting
+  const frameRef = useRef<HandFrame | null>(null);
+  frameRef.current = frame;
 
+  // Start/stop the RAF loop only when status changes, not on every frame
   useEffect(() => {
     if (status === "iframe" || status === "no-camera" || status === "error") return;
 
@@ -30,7 +34,7 @@ export function HandSkeleton({ frame, videoRef, status }: Props) {
 
     function render() {
       rafRef.current = requestAnimationFrame(render);
-      const video = videoRef.current;
+
       const W = canvas!.offsetWidth;
       const H = canvas!.offsetHeight;
       if (canvas!.width !== W || canvas!.height !== H) {
@@ -40,6 +44,7 @@ export function HandSkeleton({ frame, videoRef, status }: Props) {
       ctx!.clearRect(0, 0, W, H);
 
       // Draw mirrored webcam feed
+      const video = videoRef?.current;
       if (video && video.readyState >= 2) {
         ctx!.save();
         ctx!.translate(W, 0);
@@ -48,9 +53,10 @@ export function HandSkeleton({ frame, videoRef, status }: Props) {
         ctx!.restore();
       }
 
-      if (!frame) return;
+      const currentFrame = frameRef.current;
+      if (!currentFrame) return;
 
-      frame.hands.forEach((hand) => {
+      currentFrame.hands.forEach((hand) => {
         const color = hand.handedness === "Left" ? "#FF90E8" : "#625BF6";
 
         // Connections
@@ -97,10 +103,19 @@ export function HandSkeleton({ frame, videoRef, status }: Props) {
 
     render();
     return () => cancelAnimationFrame(rafRef.current);
-  }, [frame, videoRef, status]);
+    // Only restart the loop when status changes — frame updates via frameRef
+  }, [status, videoRef]);
 
-  // Iframe — camera blocked by browser sandbox
+  // ── Status overlays ────────────────────────────────────────────────────────
+
   if (status === "iframe") {
+    const href = (() => {
+      try {
+        return window.location.href.split("/__replco")[0];
+      } catch {
+        return "/";
+      }
+    })();
     return (
       <div className="relative w-full h-full bg-[#0a0a0a] rounded-lg overflow-hidden border-2 border-border shadow-md flex items-center justify-center">
         <div className="text-center px-6 py-8 max-w-sm">
@@ -112,7 +127,7 @@ export function HandSkeleton({ frame, videoRef, status }: Props) {
             Camera access is blocked in the embedded preview. Open the app directly in your browser to enable real-time hand tracking.
           </p>
           <a
-            href={window.location.href.split("/__replco")[0]}
+            href={href}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 bg-[#FF90E8] text-black font-bold px-5 py-2.5 rounded-md text-sm uppercase tracking-wider hover:bg-[#ff7ee4] transition-colors"
