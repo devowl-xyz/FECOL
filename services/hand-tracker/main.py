@@ -158,6 +158,37 @@ async def websocket_endpoint(ws: WebSocket):
         _ws_clients.discard(ws)
 
 
+@app.websocket(f"{BASE}/ws/landmarks")
+async def landmarks_ws(ws: WebSocket):
+    """Receive landmark frames pushed from the browser MediaPipe detector."""
+    await ws.accept()
+    logger.info("Browser landmark WebSocket connected")
+    try:
+        while True:
+            try:
+                raw = await asyncio.wait_for(ws.receive_text(), timeout=30)
+                data = json.loads(raw)
+                if data.get("cmd") == "landmarks":
+                    frame_data = data.get("data", {})
+                    for hand in frame_data.get("hands", []):
+                        flat = [
+                            v
+                            for lm in hand.get("landmarks", [])
+                            for v in (lm["x"], lm["y"], lm["z"])
+                        ]
+                        if flat:
+                            async with _frame_lock:
+                                tracker._landmark_history.append(flat)
+                                if len(tracker._landmark_history) > tracker._history_limit:
+                                    tracker._landmark_history.pop(0)
+            except asyncio.TimeoutError:
+                await ws.send_text(json.dumps({"type": "ping"}))
+    except WebSocketDisconnect:
+        logger.info("Browser landmark WebSocket disconnected")
+    except Exception as e:
+        logger.warning("Landmark WebSocket error: %s", e)
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("HAND_TRACKER_PORT", "8765"))
     logger.info("Starting Hand Control API on port %d", port)
