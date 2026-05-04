@@ -1,0 +1,160 @@
+{
+  "colorScheme": "light",
+  "fonts": [
+    {
+      "family": "ABC Favorit",
+      "role": "body"
+    },
+    {
+      "family": "Arial",
+      "role": "unknown"
+    },
+    {
+      "family": "Avenir",
+      "role": "unknown"
+    },
+    {
+      "family": "Montserrat",
+      "role": "unknown"
+    },
+    {
+      "family": "Corbel",
+      "role": "unknown"
+    }
+  ],
+  "colors": {
+    "primary": "#FF90E8",
+    "secondary": "#625BF6",
+    "accent": "#FF90E8",
+    "background": "#F4F4F0",
+    "textPrimary": "#000000",
+    "link": "#00457C"
+  },
+  "typography": {
+    "fontFamilies": {
+      "primary": "ABC Favorit",
+      "heading": "ABC Favorit"
+    },
+    "fontStacks": {
+      "heading": [
+        "ABC Favorit"
+      ],
+      "body": [
+        "ABC Favorit",
+        "Avenir",
+        "Montserrat",
+        "Corbel",
+        "URW Gothic",
+        "source-sans-pro",
+        "sans-serif"
+      ],
+      "paragraph": [
+        "ABC Favorit"
+      ]
+    },
+    "fontSizes": {
+      "h1": "96px",
+      "h2": "48px",
+      "body": "16px"
+    }
+  },
+  "spacing": {
+    "baseUnit": 4,
+    "borderRadius": "6px"
+  },
+  "components": {
+    "input": {
+      "background": "#F4F4F0",
+      "textColor": "#000000",
+      "borderColor": "#242423",
+      "borderRadius": "4px",
+      "borderRadiusCorners": {
+        "topLeft": "4px",
+        "topRight": "4px",
+        "bottomRight": "4px",
+        "bottomLeft": "4px"
+      },
+      "shadow": "none"
+    },
+    "buttonPrimary": {
+      "background": "#FF90E8",
+      "textColor": "#000000",
+      "borderColor": "#000000",
+      "borderRadius": "4px",
+      "borderRadiusCorners": {
+        "topLeft": "4px",
+        "topRight": "4px",
+        "bottomRight": "4px",
+        "bottomLeft": "4px"
+      },
+      "shadow": "none"
+    },
+    "buttonSecondary": {
+      "background": "#000000",
+      "textColor": "#FFFFFF",
+      "borderColor": "#000000",
+      "borderRadius": "4px",
+      "borderRadiusCorners": {
+        "topLeft": "4px",
+        "topRight": "4px",
+        "bottomRight": "4px",
+        "bottomLeft": "4px"
+      },
+      "shadow": "none"
+    }
+  },
+  "images": {
+    "favicon": "File saved at: attached_assets/favicon.png",
+    "ogImage": null,
+    "logoHref": "File saved at: attached_assets/logoHref.html"
+  },
+  "__llm_logo_reasoning": {
+    "selectedIndex": 5,
+    "reasoning": "Selected #5 because it is visible, located in the header, links to the homepage, and matches the brand name 'Gumroad'.",
+    "confidence": 0.9,
+    "source": "llm"
+  },
+  "__llm_button_reasoning": {
+    "primary": {
+      "index": 5,
+      "text": "→",
+      "reasoning": "Button #6 has a vibrant brand color (#FF90E8) which stands out as the primary call-to-action, despite having minimal text."
+    },
+    "secondary": {
+      "index": 0,
+      "text": "Start selling",
+      "reasoning": "Button #1 has a contrasting dark background (#000000) and action-oriented text 'Start selling', making it a suitable secondary CTA."
+    },
+    "confidence": 0.95
+  },
+  "personality": {
+    "tone": "playful",
+    "energy": "high",
+    "targetAudience": "creators and entrepreneurs"
+  },
+  "designSystem": {
+    "framework": "tailwind",
+    "componentLibrary": ""
+  },
+  "confidence": {
+    "buttons": 0.95,
+    "colors": 0.9,
+    "overall": 0.925
+  },
+  "__llm_metadata": {
+    "logoSelection": {
+      "llmCalled": true,
+      "llmSucceeded": true,
+      "finalSource": "llm",
+      "rawLogoSelection": {
+        "selectedLogoIndex": 5,
+        "selectedLogoReasoning": "Selected #5 because it is visible, located in the header, links to the homepage, and matches the brand name 'Gumroad'.",
+        "confidence": 0.9
+      }
+    },
+    "buttonClassification": {
+      "llmCalled": true,
+      "llmSucceeded": true
+    }
+  }
+}

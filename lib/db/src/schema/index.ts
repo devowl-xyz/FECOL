@@ -1,20 +1,29 @@
-// Export your models here. Add one export per file
-// export * from "./posts";
-//
-// Each model/table should ideally be split into different files.
-// Each model/table should define a Drizzle table, insert schema, and types:
-//
-//   import { pgTable, text, serial } from "drizzle-orm/pg-core";
-//   import { createInsertSchema } from "drizzle-zod";
-//   import { z } from "zod/v4";
-//
-//   export const postsTable = pgTable("posts", {
-//     id: serial("id").primaryKey(),
-//     title: text("title").notNull(),
-//   });
-//
-//   export const insertPostSchema = createInsertSchema(postsTable).omit({ id: true });
-//   export type InsertPost = z.infer<typeof insertPostSchema>;
-//   export type Post = typeof postsTable.$inferSelect;
+import { pgTable, text, serial, integer, real, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
+import { z } from "zod/v4";
 
-export {}
+export const gestureMappingsTable = pgTable("gesture_mappings", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  action: text("action").notNull(),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertGestureMappingSchema = createInsertSchema(gestureMappingsTable).omit({ id: true, createdAt: true });
+export type InsertGestureMapping = z.infer<typeof insertGestureMappingSchema>;
+export type GestureMapping = typeof gestureMappingsTable.$inferSelect;
+
+export const sessionsTable = pgTable("sessions", {
+  id: serial("id").primaryKey(),
+  label: text("label").notNull(),
+  gestureCount: integer("gesture_count").default(0).notNull(),
+  durationSeconds: real("duration_seconds").default(0).notNull(),
+  mapperGraph: jsonb("mapper_graph"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  endedAt: timestamp("ended_at"),
+});
+
+export const insertSessionSchema = createInsertSchema(sessionsTable).omit({ id: true, createdAt: true, gestureCount: true, durationSeconds: true, mapperGraph: true });
+export type InsertSession = z.infer<typeof insertSessionSchema>;
+export type Session = typeof sessionsTable.$inferSelect;

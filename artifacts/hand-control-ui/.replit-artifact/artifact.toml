@@ -1,0 +1,42 @@
+kind = "web"
+previewPath = "/"
+title = "Hand Control UI"
+version = "1.0.0"
+id = "artifacts/hand-control-ui"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23481
+
+[services.development]
+run = "pnpm --filter @workspace/hand-control-ui run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/hand-control-ui", "run", "build" ]
+publicDir = "artifacts/hand-control-ui/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23481"
+BASE_PATH = "/"
+
+[[services]]
+name = "hand-tracker"
+paths = [ "/hand-api" ]
+localPort = 8765
+
+[services.development]
+run = "python /home/runner/workspace/services/hand-tracker/main.py"
+
+[services.env]
+HAND_TRACKER_PORT = "8765"

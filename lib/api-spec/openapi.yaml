@@ -3,13 +3,17 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Hand Control API specification
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: gestures
+    description: Gesture mapping operations
+  - name: sessions
+    description: Hand tracking session operations
 paths:
   /healthz:
     get:
@@ -24,6 +28,123 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /gestures:
+    get:
+      operationId: listGestures
+      tags: [gestures]
+      summary: List gesture mappings
+      description: Returns all saved gesture-to-action mappings
+      responses:
+        "200":
+          description: List of gesture mappings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GestureMapping"
+    post:
+      operationId: createGesture
+      tags: [gestures]
+      summary: Create a gesture mapping
+      description: Save a new gesture-to-action mapping
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateGestureBody"
+      responses:
+        "201":
+          description: Created gesture mapping
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GestureMapping"
+
+  /gestures/{id}:
+    delete:
+      operationId: deleteGesture
+      tags: [gestures]
+      summary: Delete a gesture mapping
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted successfully
+
+  /sessions:
+    get:
+      operationId: listSessions
+      tags: [sessions]
+      summary: List hand tracking sessions
+      description: Returns all recorded hand tracking sessions
+      responses:
+        "200":
+          description: List of sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Session"
+    post:
+      operationId: createSession
+      tags: [sessions]
+      summary: Create a new session
+      description: Start a new hand tracking session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSessionBody"
+      responses:
+        "201":
+          description: Created session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+
+  /sessions/{id}:
+    get:
+      operationId: getSession
+      tags: [sessions]
+      summary: Get session details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Session with TDA mapper graph
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionDetail"
+
+  /sessions/summary:
+    get:
+      operationId: getSessionsSummary
+      tags: [sessions]
+      summary: Get sessions summary stats
+      description: Returns aggregate stats across all sessions
+      responses:
+        "200":
+          description: Summary stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionsSummary"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +155,149 @@ components:
       required:
         - status
 
+    GestureMapping:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+          description: Human-readable gesture name (e.g. "Open Hand", "Pinch")
+        action:
+          type: string
+          description: Action to trigger (e.g. "rotate_left", "zoom_in", "click")
+        description:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - action
+        - createdAt
+
+    CreateGestureBody:
+      type: object
+      properties:
+        name:
+          type: string
+        action:
+          type: string
+        description:
+          type: string
+      required:
+        - name
+        - action
+
+    Session:
+      type: object
+      properties:
+        id:
+          type: integer
+        label:
+          type: string
+        gestureCount:
+          type: integer
+        durationSeconds:
+          type: number
+        createdAt:
+          type: string
+          format: date-time
+        endedAt:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - id
+        - label
+        - gestureCount
+        - durationSeconds
+        - createdAt
+
+    CreateSessionBody:
+      type: object
+      properties:
+        label:
+          type: string
+      required:
+        - label
+
+    SessionDetail:
+      type: object
+      allOf:
+        - $ref: "#/components/schemas/Session"
+        - type: object
+          properties:
+            mapperGraph:
+              $ref: "#/components/schemas/MapperGraph"
+
+    MapperGraph:
+      type: object
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/MapperNode"
+        edges:
+          type: array
+          items:
+            $ref: "#/components/schemas/MapperEdge"
+      required:
+        - nodes
+        - edges
+
+    MapperNode:
+      type: object
+      properties:
+        id:
+          type: string
+        size:
+          type: integer
+        color:
+          type: string
+        label:
+          type: string
+      required:
+        - id
+        - size
+
+    MapperEdge:
+      type: object
+      properties:
+        source:
+          type: string
+        target:
+          type: string
+        weight:
+          type: number
+      required:
+        - source
+        - target
+
+    SessionsSummary:
+      type: object
+      properties:
+        totalSessions:
+          type: integer
+        totalGestures:
+          type: integer
+        totalDurationSeconds:
+          type: number
+        topGestures:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              count:
+                type: integer
+            required:
+              - name
+              - count
+      required:
+        - totalSessions
+        - totalGestures
+        - totalDurationSeconds
+        - topGestures
