@@ -17,16 +17,17 @@ export function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen bg-background overflow-hidden text-foreground selection:bg-primary selection:text-primary-foreground">
       {/* Sidebar */}
-      <aside className="w-64 border-r border-border bg-sidebar flex flex-col justify-between shrink-0">
+      <aside className="w-60 border-r-2 border-border bg-sidebar flex flex-col justify-between shrink-0">
         <div>
-          <div className="h-16 flex items-center px-6 border-b border-border">
-            <h1 className="font-black text-xl tracking-tight uppercase flex items-center gap-2">
-              <span className="text-primary text-2xl leading-none">HM</span>
-              HandMapper
-            </h1>
+          {/* Logo */}
+          <div className="h-16 flex items-center px-5 border-b-2 border-border gap-3">
+            <div className="w-9 h-9 rounded-md bg-primary border-2 border-border flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+              <span className="font-black text-sm text-primary-foreground leading-none tracking-tighter">FC</span>
+            </div>
+            <span className="font-black text-lg tracking-tight uppercase">Fecol</span>
           </div>
-          
-          <nav className="p-4 space-y-1">
+
+          <nav className="p-3 space-y-0.5">
             {navItems.map((item) => {
               const isActive = location === item.href;
               const Icon = item.icon;
@@ -35,13 +36,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    "flex items-center gap-3 px-4 py-3 rounded-md text-sm font-semibold transition-all duration-200",
+                    "flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition-all duration-150",
                     isActive
-                      ? "bg-primary text-primary-foreground shadow-sm shadow-primary/20"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground hover:translate-x-1"
+                      ? "bg-primary text-primary-foreground border-2 border-border shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground border-2 border-transparent"
                   )}
                 >
-                  <Icon className="w-5 h-5" strokeWidth={isActive ? 2.5 : 2} />
+                  <Icon className="w-4 h-4" strokeWidth={isActive ? 2.5 : 2} />
                   {item.label}
                 </Link>
               );
@@ -49,19 +50,19 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </nav>
         </div>
 
-        <div className="p-6 border-t border-border">
-          <div className="flex items-center gap-3">
-            <div className="relative flex h-3 w-3">
+        <div className="p-5 border-t-2 border-border">
+          <div className="flex items-center gap-2.5">
+            <div className="relative flex h-2.5 w-2.5">
               {health?.status === "ok" ? (
                 <>
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-3 w-3 bg-primary"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary"></span>
                 </>
               ) : (
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-muted-foreground"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-muted-foreground"></span>
               )}
             </div>
-            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
               API {health?.status === "ok" ? "Online" : "Offline"}
             </span>
           </div>
@@ -70,7 +71,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col h-full overflow-hidden relative">
-        <div className="absolute inset-0 pointer-events-none z-0 opacity-[0.03]" style={{ backgroundImage: "url('data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noiseFilter%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.65%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noiseFilter)%22/%3E%3C/svg%3E')" }}></div>
         <div className="flex-1 overflow-y-auto z-10 relative">
           {children}
         </div>

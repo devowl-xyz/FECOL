@@ -113,7 +113,7 @@ function GraphVisualization({ graph }: { graph: MapperGraph }) {
         ctx.beginPath();
         const r = Math.max(5, Math.min(20, node.size * 2));
         ctx.arc(node.x, node.y, r, 0, 2 * Math.PI);
-        ctx.fillStyle = node.color || "#FF90E8";
+        ctx.fillStyle = node.color || "#FFE500";
         ctx.fill();
         ctx.strokeStyle = "#000";
         ctx.lineWidth = 2;

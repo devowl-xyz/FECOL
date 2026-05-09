@@ -57,7 +57,7 @@ export function HandSkeleton({ frame, videoRef, status }: Props) {
       if (!currentFrame) return;
 
       currentFrame.hands.forEach((hand) => {
-        const color = hand.handedness === "Left" ? "#FF90E8" : "#625BF6";
+        const color = hand.handedness === "Left" ? "#FFE500" : "#625BF6";
 
         // Connections
         ctx!.lineWidth = 3;
@@ -130,7 +130,7 @@ export function HandSkeleton({ frame, videoRef, status }: Props) {
             href={href}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 bg-[#FF90E8] text-black font-bold px-5 py-2.5 rounded-md text-sm uppercase tracking-wider hover:bg-[#ff7ee4] transition-colors"
+            className="inline-flex items-center gap-2 bg-[#FFE500] text-black font-bold px-5 py-2.5 rounded-md text-sm uppercase tracking-wider hover:bg-[#f5dc00] transition-colors"
           >
             <ExternalLink className="w-4 h-4" />
             Open App
@@ -144,7 +144,7 @@ export function HandSkeleton({ frame, videoRef, status }: Props) {
     return (
       <div className="relative w-full h-full bg-[#0a0a0a] rounded-lg overflow-hidden border-2 border-border shadow-md flex items-center justify-center">
         <div className="text-center px-6 py-6 max-w-xs">
-          <p className="font-bold text-[#FF90E8] text-base uppercase mb-2">Camera Not Found</p>
+          <p className="font-bold text-[#FFE500] text-base uppercase mb-2">Camera Not Found</p>
           <p className="text-white/60 text-sm font-medium leading-relaxed">
             Allow camera access in your browser and reload the page.
           </p>

@@ -90,17 +90,17 @@
   --sidebar: 60 10% 98%;
   --sidebar-foreground: 0 0% 0%;
   --sidebar-border: 60 3% 14%;
-  --sidebar-primary: 312 100% 78%;
+  --sidebar-primary: 54 100% 50%;
   --sidebar-primary-foreground: 0 0% 0%;
   --sidebar-accent: 245 90% 67%;
   --sidebar-accent-foreground: 50 14% 95%;
-  --sidebar-ring: 312 100% 78%;
+  --sidebar-ring: 54 100% 50%;
   
   --popover: 50 14% 95%;
   --popover-foreground: 0 0% 0%;
   --popover-border: 60 3% 14%;
   
-  --primary: 312 100% 78%;
+  --primary: 54 100% 50%;
   --primary-foreground: 0 0% 0%;
   
   --secondary: 245 90% 67%;
@@ -109,16 +109,16 @@
   --muted: 60 10% 98%;
   --muted-foreground: 0 0% 53%;
   
-  --accent: 312 100% 78%;
+  --accent: 54 100% 50%;
   --accent-foreground: 0 0% 0%;
   
   --destructive: 0 84% 60%;
   --destructive-foreground: 50 14% 95%;
   
   --input: 60 3% 14%;
-  --ring: 312 100% 78%;
+  --ring: 54 100% 50%;
   
-  --chart-1: 312 100% 78%;
+  --chart-1: 54 100% 50%;
   --chart-2: 245 90% 67%;
   --chart-3: 0 84% 60%;
   --chart-4: 50 14% 95%;
@@ -191,17 +191,17 @@
   --sidebar: 60 3% 14%;
   --sidebar-foreground: 50 14% 95%;
   --sidebar-border: 60 10% 98%;
-  --sidebar-primary: 312 100% 78%;
+  --sidebar-primary: 54 100% 50%;
   --sidebar-primary-foreground: 0 0% 0%;
   --sidebar-accent: 245 90% 67%;
   --sidebar-accent-foreground: 50 14% 95%;
-  --sidebar-ring: 312 100% 78%;
+  --sidebar-ring: 54 100% 50%;
   
   --popover: 0 0% 0%;
   --popover-foreground: 50 14% 95%;
   --popover-border: 60 10% 98%;
   
-  --primary: 312 100% 78%;
+  --primary: 54 100% 50%;
   --primary-foreground: 0 0% 0%;
   
   --secondary: 245 90% 67%;
@@ -210,16 +210,16 @@
   --muted: 60 3% 14%;
   --muted-foreground: 0 0% 60%;
   
-  --accent: 312 100% 78%;
+  --accent: 54 100% 50%;
   --accent-foreground: 0 0% 0%;
   
   --destructive: 0 84% 60%;
   --destructive-foreground: 50 14% 95%;
   
   --input: 60 10% 98%;
-  --ring: 312 100% 78%;
+  --ring: 54 100% 50%;
   
-  --chart-1: 312 100% 78%;
+  --chart-1: 54 100% 50%;
   --chart-2: 245 90% 67%;
   --chart-3: 0 84% 60%;
   --chart-4: 50 14% 95%;

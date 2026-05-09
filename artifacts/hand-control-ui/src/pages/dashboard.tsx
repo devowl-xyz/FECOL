@@ -21,7 +21,7 @@ export default function Dashboard() {
             <div className="flex flex-col items-end border-r border-border pr-4">
               <span className="text-[10px] font-bold uppercase text-muted-foreground tracking-wider">Status</span>
               <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${isConnected ? "bg-primary shadow-[0_0_8px_rgba(255,144,232,0.8)]" : "bg-muted-foreground"}`} />
+                <div className={`w-2 h-2 rounded-full ${isConnected ? "bg-primary shadow-[0_0_8px_rgba(255,229,0,0.8)]" : "bg-muted-foreground"}`} />
                 <span className="font-bold text-sm">{isConnected ? "CONNECTED" : "CONNECTING..."}</span>
               </div>
             </div>
