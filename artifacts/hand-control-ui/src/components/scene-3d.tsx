@@ -156,7 +156,7 @@ export function Scene3D({ frame }: { frame: HandFrame | null }) {
       const cx = W / 2;
       const cy = H / 2;
       const fov = Math.min(W, H) * 0.6;
-      const baseR = Math.min(W, H) * 0.25 * state.scale;
+      const baseR = Math.min(W, H) * 0.42 * state.scale;
 
       // Transform verts
       const transformed = ICOSA_VERTS.map((v) => {
