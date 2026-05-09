@@ -22,7 +22,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           {/* Logo */}
           <div className="h-16 flex items-center px-5 border-b-2 border-border gap-3">
             <div className="w-9 h-9 rounded-md bg-primary border-2 border-border flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
-              <span className="font-black text-sm text-primary-foreground leading-none tracking-tighter">FC</span>
+              <span className="font-black text-sm text-primary-foreground leading-none tracking-tighter">F/</span>
             </div>
             <span className="font-black text-lg tracking-tight uppercase">Fecol</span>
           </div>
