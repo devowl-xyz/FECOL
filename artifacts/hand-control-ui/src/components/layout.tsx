@@ -2,7 +2,6 @@ import { Link, useLocation } from "wouter";
 import { Hand, Settings, Activity, FolderOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useHealthCheck } from "@workspace/api-client-react";
-import { GlowOrb } from "@/components/glow-orb";
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -17,61 +16,86 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-screen bg-background overflow-hidden text-foreground selection:bg-primary selection:text-primary-foreground">
-      {/* Sidebar */}
-      <aside className="w-60 border-r-2 border-border bg-sidebar flex flex-col justify-between shrink-0">
+
+      {/* Sidebar — dark so glows pop */}
+      <aside className="w-60 flex flex-col justify-between shrink-0"
+        style={{ background: "#111114", borderRight: "1px solid #2a2a2e" }}>
+
         <div>
           {/* Logo */}
-          <div className="h-16 flex items-center px-5 border-b-2 border-border gap-3">
-            <div className="w-9 h-9 rounded-md bg-primary border-2 border-border flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
-              <span className="font-black text-sm text-primary-foreground leading-none tracking-tighter">F/</span>
+          <div className="h-16 flex items-center px-5 gap-3"
+            style={{ borderBottom: "1px solid #2a2a2e" }}>
+            <div
+              className="w-9 h-9 rounded-md flex items-center justify-center relative overflow-hidden"
+              style={{
+                background: "linear-gradient(160deg, #FFE500 0%, #FFA800 100%)",
+                boxShadow: "0 0 14px rgba(255,229,0,0.8), 0 0 32px rgba(255,229,0,0.35), inset 0 1px 0 rgba(255,255,255,0.55), inset 0 -2px 0 rgba(0,0,0,0.2)",
+                border: "1px solid rgba(255,200,0,0.6)",
+              }}
+            >
+              {/* specular shine */}
+              <div className="absolute inset-0 rounded-md" style={{ background: "linear-gradient(160deg, rgba(255,255,255,0.35) 0%, transparent 55%)" }} />
+              <span className="font-black text-sm text-black leading-none tracking-tighter relative z-10">F/</span>
             </div>
-            <span className="font-black text-lg tracking-tight uppercase">Fecol</span>
+            <span
+              className="font-black text-lg tracking-tight uppercase"
+              style={{ color: "#f0f0e8", textShadow: "0 0 18px rgba(255,229,0,0.35)" }}
+            >
+              Fecol
+            </span>
           </div>
 
-          <nav className="p-3 space-y-0.5">
+          {/* Nav */}
+          <nav className="p-3 space-y-1.5">
             {navItems.map((item) => {
               const isActive = location === item.href;
               const Icon = item.icon;
               return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    "flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition-all duration-150",
-                    isActive
-                      ? "bg-primary text-primary-foreground border-2 border-border shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground border-2 border-transparent"
-                  )}
-                >
-                  <Icon className="w-4 h-4" strokeWidth={isActive ? 2.5 : 2} />
-                  {item.label}
+                <Link key={item.href} href={item.href}>
+                  <div
+                    className={cn(
+                      "flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition-all duration-150 relative overflow-hidden cursor-pointer",
+                      !isActive && "hover:bg-white/5"
+                    )}
+                    style={isActive ? {
+                      background: "linear-gradient(160deg, #FFE500 0%, #FFBB00 100%)",
+                      color: "#000",
+                      boxShadow: "0 0 12px rgba(255,229,0,0.75), 0 0 28px rgba(255,229,0,0.3), inset 0 1px 0 rgba(255,255,255,0.5), inset 0 -1px 0 rgba(0,0,0,0.15), 0 2px 0 rgba(0,0,0,0.5)",
+                      border: "1px solid rgba(200,160,0,0.7)",
+                    } : {
+                      color: "rgba(220,215,200,0.55)",
+                      border: "1px solid transparent",
+                    }}
+                  >
+                    {/* active specular */}
+                    {isActive && (
+                      <div className="absolute inset-0 rounded-md pointer-events-none" style={{ background: "linear-gradient(160deg, rgba(255,255,255,0.28) 0%, transparent 50%)" }} />
+                    )}
+                    <Icon className="w-4 h-4 relative z-10" strokeWidth={isActive ? 2.5 : 2} />
+                    <span className="relative z-10">{item.label}</span>
+                  </div>
                 </Link>
               );
             })}
           </nav>
         </div>
 
-        {/* Glowing orb decoration */}
-        <div className="px-4 py-5 flex flex-col items-center gap-2">
-          <GlowOrb />
-          <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60">
-            Gesture Engine
-          </p>
-        </div>
-
-        <div className="p-5 border-t-2 border-border">
+        {/* API status */}
+        <div className="p-5" style={{ borderTop: "1px solid #2a2a2e" }}>
           <div className="flex items-center gap-2.5">
             <div className="relative flex h-2.5 w-2.5">
               {health?.status === "ok" ? (
                 <>
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary"></span>
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+                    style={{ background: "#FFE500", boxShadow: "0 0 6px rgba(255,229,0,0.8)" }} />
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5"
+                    style={{ background: "#FFE500", boxShadow: "0 0 8px rgba(255,229,0,1)" }} />
                 </>
               ) : (
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-muted-foreground"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-muted-foreground" />
               )}
             </div>
-            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+            <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "rgba(200,195,180,0.5)" }}>
               API {health?.status === "ok" ? "Online" : "Offline"}
             </span>
           </div>

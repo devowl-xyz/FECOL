@@ -87,9 +87,9 @@
   --card-foreground: 0 0% 0%;
   --card-border: 60 3% 14%;
   
-  --sidebar: 60 10% 98%;
-  --sidebar-foreground: 0 0% 0%;
-  --sidebar-border: 60 3% 14%;
+  --sidebar: 0 0% 8%;
+  --sidebar-foreground: 50 10% 92%;
+  --sidebar-border: 0 0% 18%;
   --sidebar-primary: 54 100% 50%;
   --sidebar-primary-foreground: 0 0% 0%;
   --sidebar-accent: 245 90% 67%;
