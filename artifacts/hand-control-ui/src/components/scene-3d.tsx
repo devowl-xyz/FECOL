@@ -25,14 +25,14 @@ const VERTS: Vec3[] = [
   { x:  1, y:  1, z:  1 }, { x: -1, y:  1, z:  1 },
 ];
 
-// Each face: vertex indices + outward normal direction
-const FACES: { idx: [number,number,number,number]; nx: number; ny: number; nz: number }[] = [
-  { idx: [4,5,6,7], nx:  0, ny:  0, nz:  1 }, // front
-  { idx: [1,0,3,2], nx:  0, ny:  0, nz: -1 }, // back
-  { idx: [0,4,7,3], nx: -1, ny:  0, nz:  0 }, // left
-  { idx: [5,1,2,6], nx:  1, ny:  0, nz:  0 }, // right
-  { idx: [7,6,2,3], nx:  0, ny:  1, nz:  0 }, // top
-  { idx: [0,1,5,4], nx:  0, ny: -1, nz:  0 }, // bottom
+// Each face: vertex indices + outward normal + base colour [r,g,b]
+const FACES: { idx: [number,number,number,number]; nx: number; ny: number; nz: number; rgb: [number,number,number] }[] = [
+  { idx: [4,5,6,7], nx:  0, ny:  0, nz:  1, rgb: [255, 229,   0] }, // front  — pure yellow
+  { idx: [1,0,3,2], nx:  0, ny:  0, nz: -1, rgb: [255, 160,   0] }, // back   — deep amber
+  { idx: [0,4,7,3], nx: -1, ny:  0, nz:  0, rgb: [255, 200,  30] }, // left   — golden yellow
+  { idx: [5,1,2,6], nx:  1, ny:  0, nz:  0, rgb: [255, 240, 100] }, // right  — pale yellow
+  { idx: [7,6,2,3], nx:  0, ny:  1, nz:  0, rgb: [255, 255, 160] }, // top    — soft cream-yellow
+  { idx: [0,1,5,4], nx:  0, ny: -1, nz:  0, rgb: [180, 140, 255] }, // bottom — purple accent
 ];
 
 export function Scene3D({ frame }: { frame: HandFrame | null }) {
@@ -134,7 +134,7 @@ export function Scene3D({ frame }: { frame: HandFrame | null }) {
         return { ...f, depth };
       }).sort((a, b) => a.depth - b.depth);
 
-      sorted.forEach(({ idx, depth }) => {
+      sorted.forEach(({ idx, depth, rgb }) => {
         const pts = idx.map((i) => project(tv[i], cx, cy, fov, camDist));
 
         // Light: brightest face closest to viewer
@@ -145,13 +145,15 @@ export function Scene3D({ frame }: { frame: HandFrame | null }) {
         pts.slice(1).forEach(([px, py]) => ctx.lineTo(px, py));
         ctx.closePath();
 
-        // Yellow face fill
-        const alpha = 0.18 + light * 0.45;
-        ctx.fillStyle = `rgba(255, 229, 0, ${alpha})`;
+        // Per-face colour, modulated by lighting
+        const [r0, g0, b0] = rgb;
+        const alpha = 0.22 + light * 0.55;
+        ctx.fillStyle = `rgba(${r0}, ${g0}, ${b0}, ${alpha})`;
         ctx.fill();
 
-        // Purple edge
-        ctx.strokeStyle = `rgba(98, 91, 246, ${0.3 + light * 0.5})`;
+        // Edge colour tinted toward the face colour
+        const edgeAlpha = 0.35 + light * 0.45;
+        ctx.strokeStyle = `rgba(${Math.round(r0 * 0.4 + 98 * 0.6)}, ${Math.round(g0 * 0.2 + 91 * 0.8)}, ${Math.round(b0 * 0.3 + 246 * 0.7)}, ${edgeAlpha})`;
         ctx.lineWidth = 2;
         ctx.stroke();
       });
