@@ -26,16 +26,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <div className="h-16 flex items-center px-5 gap-3"
             style={{ borderBottom: "1px solid #2a2a2e" }}>
             <div
-              className="w-9 h-9 rounded-md flex items-center justify-center relative overflow-hidden"
+              className="w-9 h-9 rounded-md flex items-center justify-center overflow-hidden"
               style={{
-                background: "linear-gradient(160deg, #FFE500 0%, #FFA800 100%)",
-                boxShadow: "0 0 14px rgba(255,229,0,0.8), 0 0 32px rgba(255,229,0,0.35), inset 0 1px 0 rgba(255,255,255,0.55), inset 0 -2px 0 rgba(0,0,0,0.2)",
-                border: "1px solid rgba(255,200,0,0.6)",
+                boxShadow: "0 0 14px rgba(255,229,0,0.75), 0 0 32px rgba(255,229,0,0.3), 2px 2px 0 rgba(0,0,0,0.7)",
+                border: "1.5px solid rgba(0,0,0,0.7)",
               }}
             >
-              {/* specular shine */}
-              <div className="absolute inset-0 rounded-md" style={{ background: "linear-gradient(160deg, rgba(255,255,255,0.35) 0%, transparent 55%)" }} />
-              <span className="font-black text-sm text-black leading-none tracking-tighter relative z-10">F/</span>
+              <img src="/logo.png" alt="Fecol" className="w-full h-full object-cover" />
             </div>
             <span
               className="font-black text-lg tracking-tight uppercase"
