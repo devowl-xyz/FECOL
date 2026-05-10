@@ -2,6 +2,7 @@ import { Link, useLocation } from "wouter";
 import { Hand, Settings, Activity, FolderOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useHealthCheck } from "@workspace/api-client-react";
+import { GlowOrb } from "@/components/glow-orb";
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -48,6 +49,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
               );
             })}
           </nav>
+        </div>
+
+        {/* Glowing orb decoration */}
+        <div className="px-4 py-5 flex flex-col items-center gap-2">
+          <GlowOrb />
+          <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60">
+            Gesture Engine
+          </p>
         </div>
 
         <div className="p-5 border-t-2 border-border">
