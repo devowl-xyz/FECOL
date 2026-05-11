@@ -79,6 +79,17 @@ export function Scene3D({ frame }: { frame: HandFrame | null }) {
         } else if (hand.gesture === "fist") {
           state.spinFast = false;
           state.targetScale = 0.5;
+        } else if (hand.gesture === "thumbs_up") {
+          // Thumbs up — rise and grow
+          state.spinFast = false;
+          state.targetScale = 1.6;
+          state.targetRotX += dt * 1.5;
+        } else if (hand.gesture === "two_fingers") {
+          // Peace — slow counter-spin
+          state.spinFast = false;
+          state.rotX -= dt * 1.2;
+          state.rotY -= dt * 1.2;
+          state.targetScale = 1.1;
         } else {
           state.spinFast = false;
           state.targetScale = 1;

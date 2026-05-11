@@ -12,7 +12,7 @@ export type Hand = {
   handedness: "Left" | "Right";
   pinch_distance: number;
   is_open: boolean;
-  gesture: "pinch" | "open_hand" | "point" | "fist" | "unknown";
+  gesture: "pinch" | "open_hand" | "point" | "fist" | "thumbs_up" | "two_fingers" | "unknown";
 };
 
 export type HandFrame = {
@@ -45,16 +45,34 @@ function isHandOpen(lms: Landmark[]): boolean {
 }
 
 function classifyGesture(lms: Landmark[]): Hand["gesture"] {
-  if (!lms.length) return "unknown";
+  if (lms.length < 21) return "unknown";
+
   const pinch = computePinchDistance(lms);
   if (pinch < 0.06) return "pinch";
-  if (isHandOpen(lms)) return "open_hand";
-  if (lms.length >= 21) {
-    const indexUp = lms[8].y < lms[6].y;
-    const middleDown = lms[12].y > lms[10].y;
-    const ringDown = lms[16].y > lms[14].y;
-    if (indexUp && middleDown && ringDown) return "point";
-  }
+
+  const fingerTips = [8, 12, 16, 20];
+  const fingerPips = [6, 10, 14, 18];
+
+  const indexUp  = lms[8].y  < lms[6].y;
+  const middleUp = lms[12].y < lms[10].y;
+  const ringUp   = lms[16].y < lms[14].y;
+  const pinkyUp  = lms[20].y < lms[18].y;
+
+  // Thumbs up: thumb tip clearly above thumb MCP, all four fingers curled
+  const thumbExtendedUp = lms[4].y < lms[3].y && lms[4].y < lms[2].y;
+  const allFingersCurled = fingerTips.every((tip, i) => lms[tip].y > lms[fingerPips[i]].y);
+  if (thumbExtendedUp && allFingersCurled) return "thumbs_up";
+
+  // Two fingers (peace/victory): index + middle up, ring + pinky curled
+  if (indexUp && middleUp && !ringUp && !pinkyUp) return "two_fingers";
+
+  // Point: only index up, middle + ring curled
+  if (indexUp && !middleUp && !ringUp) return "point";
+
+  // Open hand: 3 or more fingers extended
+  const extendedCount = [indexUp, middleUp, ringUp, pinkyUp].filter(Boolean).length;
+  if (extendedCount >= 3) return "open_hand";
+
   return "fist";
 }
 
