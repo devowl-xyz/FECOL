@@ -41,6 +41,8 @@ export function Scene3D({ frame }: { frame: HandFrame | null }) {
     rotX: 0.4, rotY: 0.6,
     targetRotX: 0.4, targetRotY: 0.6,
     scale: 1, targetScale: 1,
+    panX: 0, panY: 0,
+    targetPanX: 0, targetPanY: 0,
     spinFast: false,
   });
   const frameRef = useRef<HandFrame | null>(null);
@@ -60,6 +62,9 @@ export function Scene3D({ frame }: { frame: HandFrame | null }) {
       const dt = Math.min((now - lastTime) / 1000, 0.05);
       lastTime = now;
 
+      const W = canvas.offsetWidth;
+      const H = canvas.offsetHeight;
+
       const hand = frameRef.current?.hands[0];
       if (hand) {
         if (hand.gesture === "open_hand") {
@@ -70,48 +75,71 @@ export function Scene3D({ frame }: { frame: HandFrame | null }) {
           }
           state.spinFast = false;
           state.targetScale = 1;
+          state.targetPanX = 0;
+          state.targetPanY = 0;
+        } else if (hand.gesture === "two_fingers") {
+          // Pan: track midpoint between index tip (8) and middle tip (12)
+          // Landmarks are mirrored on x to match the flipped video
+          const i8 = hand.landmarks[8];
+          const i12 = hand.landmarks[12];
+          if (i8 && i12) {
+            const midX = (i8.x + i12.x) / 2;
+            const midY = (i8.y + i12.y) / 2;
+            // (0.5 - midX) because camera x is mirrored in the canvas
+            state.targetPanX = (0.5 - midX) * W * 0.8;
+            state.targetPanY = (midY - 0.5) * H * 0.8;
+          }
+          state.spinFast = false;
+          state.targetScale = 1;
         } else if (hand.gesture === "point") {
           state.spinFast = true;
           state.targetScale = 1;
+          state.targetPanX = 0;
+          state.targetPanY = 0;
         } else if (hand.gesture === "pinch") {
           state.spinFast = false;
           state.targetScale = 1.4;
+          state.targetPanX = 0;
+          state.targetPanY = 0;
         } else if (hand.gesture === "fist") {
           state.spinFast = false;
           state.targetScale = 0.5;
+          state.targetPanX = 0;
+          state.targetPanY = 0;
         } else if (hand.gesture === "thumbs_up") {
-          // Thumbs up — rise and grow
           state.spinFast = false;
           state.targetScale = 1.6;
           state.targetRotX += dt * 1.5;
-        } else if (hand.gesture === "two_fingers") {
-          // Peace — slow counter-spin
-          state.spinFast = false;
-          state.rotX -= dt * 1.2;
-          state.rotY -= dt * 1.2;
-          state.targetScale = 1.1;
+          state.targetPanX = 0;
+          state.targetPanY = 0;
         } else {
           state.spinFast = false;
           state.targetScale = 1;
+          state.targetPanX = 0;
+          state.targetPanY = 0;
         }
       } else {
         state.spinFast = false;
         state.targetRotY += dt * 0.5;
         state.targetRotX += dt * 0.2;
         state.targetScale = 1;
+        state.targetPanX = 0;
+        state.targetPanY = 0;
       }
+
+      const ease = 1 - Math.exp(-8 * dt);
 
       if (state.spinFast) {
         state.rotX += dt * 4;
         state.rotY += dt * 4;
       } else {
-        state.rotX += (state.targetRotX - state.rotX) * (1 - Math.exp(-8 * dt));
-        state.rotY += (state.targetRotY - state.rotY) * (1 - Math.exp(-8 * dt));
+        state.rotX += (state.targetRotX - state.rotX) * ease;
+        state.rotY += (state.targetRotY - state.rotY) * ease;
       }
-      state.scale += (state.targetScale - state.scale) * (1 - Math.exp(-8 * dt));
+      state.scale += (state.targetScale - state.scale) * ease;
+      state.panX  += (state.targetPanX  - state.panX)  * ease;
+      state.panY  += (state.targetPanY  - state.panY)  * ease;
 
-      const W = canvas.offsetWidth;
-      const H = canvas.offsetHeight;
       if (canvas.width !== W || canvas.height !== H) {
         canvas.width = W; canvas.height = H;
       }
@@ -125,8 +153,10 @@ export function Scene3D({ frame }: { frame: HandFrame | null }) {
       for (let x = 0; x <= W; x += gs) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
       for (let y = 0; y <= H; y += gs) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
 
-      const cx = W / 2;
-      const cy = H / 2;
+      // Centre offset by pan
+      const cx = W / 2 + state.panX;
+      const cy = H / 2 + state.panY;
+
       const r = Math.min(W, H) * 0.26 * state.scale;
       const camDist = r * 5;
       const fov = r * 3.5;
@@ -148,7 +178,6 @@ export function Scene3D({ frame }: { frame: HandFrame | null }) {
       sorted.forEach(({ idx, depth, rgb }) => {
         const pts = idx.map((i) => project(tv[i], cx, cy, fov, camDist));
 
-        // Light: brightest face closest to viewer
         const light = Math.max(0, Math.min(1, (depth / r + 1) / 2));
 
         ctx.beginPath();
@@ -156,20 +185,18 @@ export function Scene3D({ frame }: { frame: HandFrame | null }) {
         pts.slice(1).forEach(([px, py]) => ctx.lineTo(px, py));
         ctx.closePath();
 
-        // Per-face colour, modulated by lighting
         const [r0, g0, b0] = rgb;
         const alpha = 0.22 + light * 0.55;
         ctx.fillStyle = `rgba(${r0}, ${g0}, ${b0}, ${alpha})`;
         ctx.fill();
 
-        // Edge colour tinted toward the face colour
         const edgeAlpha = 0.35 + light * 0.45;
         ctx.strokeStyle = `rgba(${Math.round(r0 * 0.4 + 98 * 0.6)}, ${Math.round(g0 * 0.2 + 91 * 0.8)}, ${Math.round(b0 * 0.3 + 246 * 0.7)}, ${edgeAlpha})`;
         ctx.lineWidth = 2;
         ctx.stroke();
       });
 
-      // Soft shadow
+      // Soft shadow (follows pan)
       const shadowY = cy + r * 0.85;
       const sg = ctx.createRadialGradient(cx, shadowY, 0, cx, shadowY, r * 0.9);
       sg.addColorStop(0, "rgba(0,0,0,0.12)");
