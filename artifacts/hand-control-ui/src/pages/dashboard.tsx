@@ -15,9 +15,19 @@ const statCard = {
   border: "1.5px solid rgba(0,0,0,0.8)",
 };
 
+const CAMERA_STATUS: Record<string, { label: string; color: string; pulse: boolean }> = {
+  loading:   { label: "LOADING",   color: "#888888", pulse: true  },
+  ready:     { label: "CAMERA ON", color: "#FFE500", pulse: false },
+  "no-camera": { label: "NO CAMERA", color: "#ef4444", pulse: false },
+  iframe:    { label: "PREVIEW",   color: "#888888", pulse: false },
+  error:     { label: "ERROR",     color: "#ef4444", pulse: false },
+};
+
 export default function Dashboard() {
-  const { isConnected, latestFrame, fps, status, videoRef } = useHandTracker();
+  const { latestFrame, fps, status, videoRef } = useHandTracker();
   const currentGesture = latestFrame?.hands[0]?.gesture || "none";
+  const camStatus = CAMERA_STATUS[status] ?? CAMERA_STATUS.loading;
+  const isTracking = status === "ready" && (latestFrame?.hands.length ?? 0) > 0;
 
   return (
     <Layout>
@@ -33,14 +43,24 @@ export default function Dashboard() {
           {/* Status bar */}
           <div className="flex items-center gap-0 rounded-md overflow-hidden" style={statCard}>
             <div className="flex flex-col items-end px-4 py-2.5 border-r border-black/10">
-              <span className="text-[9px] font-bold uppercase text-muted-foreground tracking-widest">Status</span>
+              <span className="text-[9px] font-bold uppercase text-muted-foreground tracking-widest">Camera</span>
               <div className="flex items-center gap-1.5 mt-0.5">
-                <span
-                  className="w-2 h-2 rounded-full"
-                  style={{ background: isConnected ? "#FFE500" : "#888" }}
-                />
-                <span className="font-bold text-xs">{isConnected ? "CONNECTED" : "CONNECTING..."}</span>
+                <span className="relative flex h-2 w-2">
+                  {camStatus.pulse && (
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-60"
+                      style={{ background: camStatus.color }} />
+                  )}
+                  <span className="relative inline-flex rounded-full h-2 w-2"
+                    style={{ background: camStatus.color }} />
+                </span>
+                <span className="font-bold text-xs">{camStatus.label}</span>
               </div>
+            </div>
+            <div className="flex flex-col items-end px-4 py-2.5 border-r border-black/10">
+              <span className="text-[9px] font-bold uppercase text-muted-foreground tracking-widest">Tracking</span>
+              <span className="font-bold text-xs mt-0.5" style={{ color: isTracking ? "#22c55e" : "#888" }}>
+                {isTracking ? `${latestFrame!.hands.length} HAND${latestFrame!.hands.length > 1 ? "S" : ""}` : "NONE"}
+              </span>
             </div>
             <div className="flex flex-col items-end px-4 py-2.5 border-r border-black/10">
               <span className="text-[9px] font-bold uppercase text-muted-foreground tracking-widest">FPS</span>
