@@ -1,4 +1,4 @@
-## FECOL/use_cases
+## FECOL/use_cases (implement this as additional pages on FECOL)
 
 **Presentation / Slideshow Controller**
 Map gestures to slide navigation — swipe/point to advance, fist to go back, pinch to laser pointer. This is one of the most immediately practical use cases since it works at a distance from a laptop.
@@ -9,3 +9,8 @@ Add actions like Play/Pause, Next Track, Volume Up/Down, Switch Tab — useful w
 **Sign Language Learning Aid**
 Use the gesture detection as feedback for ASL finger-spelling or common signs. Show a target pose, have the user match it, score accuracy. The session recording is perfect for this.
 
+**Blender/CAD 3D Model Visualizer**
+
+**Blender/CAD 3D Model Editor**
+
+**World Map Controller**

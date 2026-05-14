@@ -50,28 +50,35 @@ function classifyGesture(lms: Landmark[]): Hand["gesture"] {
   const pinch = computePinchDistance(lms);
   if (pinch < 0.06) return "pinch";
 
-  const fingerTips = [8, 12, 16, 20];
-  const fingerPips = [6, 10, 14, 18];
+  // Dead-zone margin — finger must cross PIP by this much to register up/down.
+  // Eliminates flickering at the boundary.
+  const M = 0.028;
 
-  const indexUp  = lms[8].y  < lms[6].y;
-  const middleUp = lms[12].y < lms[10].y;
-  const ringUp   = lms[16].y < lms[14].y;
-  const pinkyUp  = lms[20].y < lms[18].y;
+  const indexUp    = lms[8].y  < lms[6].y  - M;
+  const middleUp   = lms[12].y < lms[10].y - M;
+  const ringUp     = lms[16].y < lms[14].y - M;
+  const pinkyUp    = lms[20].y < lms[18].y - M;
+  const indexDown  = lms[8].y  > lms[6].y  + M;
+  const middleDown = lms[12].y > lms[10].y + M;
+  const ringDown   = lms[16].y > lms[14].y + M;
+  const pinkyDown  = lms[20].y > lms[18].y + M;
 
-  // Thumbs up: thumb tip clearly above thumb MCP, all four fingers curled
-  const thumbExtendedUp = lms[4].y < lms[3].y && lms[4].y < lms[2].y;
-  const allFingersCurled = fingerTips.every((tip, i) => lms[tip].y > lms[fingerPips[i]].y);
-  if (thumbExtendedUp && allFingersCurled) return "thumbs_up";
+  // Thumbs up: thumb tip must clear its MCP by 7% of frame height AND
+  // sit above the wrist — prevents a fist with a resting thumb triggering it.
+  // All four fingers must be clearly curled (dead-zone enforced).
+  const thumbWellUp = lms[4].y < lms[2].y - 0.07 && lms[4].y < lms[0].y;
+  const allCurled   = indexDown && middleDown && ringDown && pinkyDown;
+  if (thumbWellUp && allCurled) return "thumbs_up";
 
-  // Two fingers (peace/victory): index + middle up, ring + pinky curled
-  if (indexUp && middleUp && !ringUp && !pinkyUp) return "two_fingers";
+  // Two fingers (peace): index + middle clearly up, ring + pinky clearly down
+  if (indexUp && middleUp && ringDown && pinkyDown) return "two_fingers";
 
-  // Point: only index up, middle + ring curled
-  if (indexUp && !middleUp && !ringUp) return "point";
+  // Point: only index clearly up, middle clearly down
+  if (indexUp && middleDown && ringDown) return "point";
 
-  // Open hand: 3 or more fingers extended
-  const extendedCount = [indexUp, middleUp, ringUp, pinkyUp].filter(Boolean).length;
-  if (extendedCount >= 3) return "open_hand";
+  // Open hand: 3+ fingers clearly extended
+  const extCount = [indexUp, middleUp, ringUp, pinkyUp].filter(Boolean).length;
+  if (extCount >= 3) return "open_hand";
 
   return "fist";
 }

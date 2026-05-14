@@ -35,6 +35,15 @@ const FACES: { idx: [number,number,number,number]; nx: number; ny: number; nz: n
   { idx: [0,1,5,4], nx:  0, ny: -1, nz:  0, rgb: [180, 140, 255] }, // bottom — purple accent
 ];
 
+// Apparent hand size: wrist (0) → middle-finger MCP (9).
+// Larger value = hand is closer to camera.
+// Typical range: ~0.08 (arm's length) … ~0.32 (hand filling frame)
+function apparentHandSize(lms: HandFrame["hands"][0]["landmarks"]): number {
+  const w = lms[0], m = lms[9];
+  if (!w || !m) return 0.16;
+  return Math.sqrt((w.x - m.x) ** 2 + (w.y - m.y) ** 2);
+}
+
 export function Scene3D({ frame }: { frame: HandFrame | null }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef({
@@ -68,26 +77,29 @@ export function Scene3D({ frame }: { frame: HandFrame | null }) {
       const hand = frameRef.current?.hands[0];
       if (hand) {
         if (hand.gesture === "open_hand") {
+          // Rotation: index fingertip drives orientation
           const idx = hand.landmarks[8];
           if (idx) {
             state.targetRotX = (idx.y - 0.5) * Math.PI * 2;
             state.targetRotY = (idx.x - 0.5) * Math.PI * 2;
           }
+          // Proximity zoom: apparent hand size → scale
+          // Range 0.08 (far) … 0.32 (close) mapped to 0.4 … 2.2
+          const sz = apparentHandSize(hand.landmarks);
+          state.targetScale = 0.4 + Math.max(0, Math.min(1, (sz - 0.08) / 0.24)) * 1.8;
           state.spinFast = false;
-          state.targetScale = 1;
           state.targetPanX = 0;
           state.targetPanY = 0;
         } else if (hand.gesture === "two_fingers") {
-          // Pan: track midpoint between index tip (8) and middle tip (12)
-          // Landmarks are mirrored on x to match the flipped video
-          const i8 = hand.landmarks[8];
+          // Pan: midpoint of index tip (8) and middle tip (12)
+          // x is flipped to match the mirrored canvas
+          const i8  = hand.landmarks[8];
           const i12 = hand.landmarks[12];
           if (i8 && i12) {
             const midX = (i8.x + i12.x) / 2;
             const midY = (i8.y + i12.y) / 2;
-            // (0.5 - midX) because camera x is mirrored in the canvas
-            state.targetPanX = (0.5 - midX) * W * 0.8;
-            state.targetPanY = (midY - 0.5) * H * 0.8;
+            state.targetPanX = (0.5 - midX) * W * 0.85;
+            state.targetPanY = (midY - 0.5) * H * 0.85;
           }
           state.spinFast = false;
           state.targetScale = 1;
