@@ -53,6 +53,7 @@ export function Scene3D({ frame }: { frame: HandFrame | null }) {
     panX: 0, panY: 0,
     targetPanX: 0, targetPanY: 0,
     spinFast: false,
+    shake: 0, targetShake: 0,
   });
   const frameRef = useRef<HandFrame | null>(null);
   frameRef.current = frame;
@@ -90,6 +91,7 @@ export function Scene3D({ frame }: { frame: HandFrame | null }) {
           state.spinFast = false;
           state.targetPanX = 0;
           state.targetPanY = 0;
+          state.targetShake = 0;
         } else if (hand.gesture === "two_fingers") {
           // Pan: midpoint of index tip (8) and middle tip (12)
           // x is flipped to match the mirrored canvas
@@ -103,32 +105,39 @@ export function Scene3D({ frame }: { frame: HandFrame | null }) {
           }
           state.spinFast = false;
           state.targetScale = 1;
+          state.targetShake = 0;
         } else if (hand.gesture === "point") {
           state.spinFast = true;
           state.targetScale = 1;
           state.targetPanX = 0;
           state.targetPanY = 0;
+          state.targetShake = 0;
         } else if (hand.gesture === "pinch") {
           state.spinFast = false;
           state.targetScale = 1.4;
           state.targetPanX = 0;
           state.targetPanY = 0;
+          state.targetShake = 0;
         } else if (hand.gesture === "fist") {
-          state.spinFast = false;
-          state.targetScale = 0.5;
+          // Squish + fast spin + shake
+          state.spinFast = true;
+          state.targetScale = 0.45;
           state.targetPanX = 0;
           state.targetPanY = 0;
+          state.targetShake = 10;
         } else if (hand.gesture === "thumbs_up") {
           state.spinFast = false;
           state.targetScale = 1.6;
           state.targetRotX += dt * 1.5;
           state.targetPanX = 0;
           state.targetPanY = 0;
+          state.targetShake = 0;
         } else {
           state.spinFast = false;
           state.targetScale = 1;
           state.targetPanX = 0;
           state.targetPanY = 0;
+          state.targetShake = 0;
         }
       } else {
         state.spinFast = false;
@@ -137,6 +146,7 @@ export function Scene3D({ frame }: { frame: HandFrame | null }) {
         state.targetScale = 1;
         state.targetPanX = 0;
         state.targetPanY = 0;
+        state.targetShake = 0;
       }
 
       const ease = 1 - Math.exp(-8 * dt);
@@ -151,6 +161,7 @@ export function Scene3D({ frame }: { frame: HandFrame | null }) {
       state.scale += (state.targetScale - state.scale) * ease;
       state.panX  += (state.targetPanX  - state.panX)  * ease;
       state.panY  += (state.targetPanY  - state.panY)  * ease;
+      state.shake += (state.targetShake - state.shake)  * (1 - Math.exp(-12 * dt));
 
       if (canvas.width !== W || canvas.height !== H) {
         canvas.width = W; canvas.height = H;
@@ -165,9 +176,11 @@ export function Scene3D({ frame }: { frame: HandFrame | null }) {
       for (let x = 0; x <= W; x += gs) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
       for (let y = 0; y <= H; y += gs) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
 
-      // Centre offset by pan
-      const cx = W / 2 + state.panX;
-      const cy = H / 2 + state.panY;
+      // Centre offset by pan + per-frame shake jitter
+      const jx = state.shake > 0.5 ? (Math.random() - 0.5) * state.shake * 2 : 0;
+      const jy = state.shake > 0.5 ? (Math.random() - 0.5) * state.shake * 2 : 0;
+      const cx = W / 2 + state.panX + jx;
+      const cy = H / 2 + state.panY + jy;
 
       const r = Math.min(W, H) * 0.26 * state.scale;
       const camDist = r * 5;
