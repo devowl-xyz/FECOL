@@ -80,7 +80,18 @@ function classifyGesture(lms: Landmark[]): Hand["gesture"] {
   const extCount = [indexUp, middleUp, ringUp, pinkyUp].filter(Boolean).length;
   if (extCount >= 3) return "open_hand";
 
-  return "fist";
+  // Fist: all 4 fingertips must be clearly below their MCP knuckles.
+  // Checking tip vs MCP (not just PIP) requires a genuine full curl —
+  // a slightly bent or relaxed hand will not trigger this.
+  // Landmark indices: Index MCP=5, Middle MCP=9, Ring MCP=13, Pinky MCP=17
+  const F = 0.02; // minimum clearance past the knuckle
+  const indexFist  = lms[8].y  > lms[5].y  + F;
+  const middleFist = lms[12].y > lms[9].y  + F;
+  const ringFist   = lms[16].y > lms[13].y + F;
+  const pinkyFist  = lms[20].y > lms[17].y + F;
+  if (indexFist && middleFist && ringFist && pinkyFist && !thumbWellUp) return "fist";
+
+  return "unknown";
 }
 
 function mpResultToFrame(
