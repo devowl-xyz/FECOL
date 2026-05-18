@@ -64,7 +64,6 @@ export function Scene3D({ frame }: { frame: HandFrame | null }) {
   const prevPalmsRef = useRef<{ lx: number; ly: number; rx: number; ry: number } | null>(null);
   const prevPalmTimeRef = useRef<number>(0);
   const throwCooldownRef = useRef<number>(0);
-  const gravCooldownRef = useRef<number>(0);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -90,7 +89,12 @@ export function Scene3D({ frame }: { frame: HandFrame | null }) {
       const bothOpen  = leftHand?.gesture === "open_hand" && rightHand?.gesture === "open_hand";
 
       throwCooldownRef.current = Math.max(0, throwCooldownRef.current - dt);
-      gravCooldownRef.current  = Math.max(0, gravCooldownRef.current  - dt);
+
+      // Gravity is automatically on when both hands are open
+      const prevGravity = state.gravityOn;
+      state.gravityOn = bothOpen;
+      if (state.gravityOn && !prevGravity) state.gravityPulse = 1.6;
+      if (!state.gravityOn && prevGravity)  state.gravityPulse = 1.6;
 
       let palmVelX = 0, palmVelY = 0;
 
@@ -125,17 +129,6 @@ export function Scene3D({ frame }: { frame: HandFrame | null }) {
           state.velY = palmVelY * H * 0.55;
           state.thrown = true;
           throwCooldownRef.current = 0.9;
-        }
-
-        // Gravity toggle: both hands push strongly downward (mostly vertical)
-        if (
-          palmVelY > 1.5 &&
-          Math.abs(palmVelX) < palmVelY * 0.6 &&
-          gravCooldownRef.current <= 0
-        ) {
-          state.gravityOn = !state.gravityOn;
-          state.gravityPulse = 1.6;
-          gravCooldownRef.current = 1.2;
         }
       } else {
         state.twoHandMode = false;
