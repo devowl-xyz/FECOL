@@ -78,19 +78,26 @@ export function Scene3D({ frame }: { frame: HandFrame | null }) {
       const hand = frameRef.current?.hands[0];
       if (hand) {
         if (hand.gesture === "open_hand") {
-          // Pan: palm center (middle-finger MCP, lm9) drives translation
-          // X is flipped to match the mirrored canvas feed
           const palm = hand.landmarks[9];
+          const idx  = hand.landmarks[8];
           if (palm) {
+            // Pan: absolute palm-center position → translation (X flipped for mirror)
             state.targetPanX = (0.5 - palm.x) * W * 0.9;
             state.targetPanY = (palm.y - 0.5) * H * 0.9;
+          }
+          if (palm && idx) {
+            // Rotation: index-tip offset *relative to palm* → orientation
+            // Small relative movement (~±0.1) amplified to a full rotation range
+            const relX = idx.x - palm.x;
+            const relY = idx.y - palm.y;
+            state.targetRotY = -relX * Math.PI * 7; // flipped for mirror
+            state.targetRotX =  relY * Math.PI * 7;
           }
           // Proximity zoom: apparent hand size → scale
           // Range 0.08 (far) … 0.32 (close) mapped to 0.4 … 2.2
           const sz = apparentHandSize(hand.landmarks);
           state.targetScale = 0.4 + Math.max(0, Math.min(1, (sz - 0.08) / 0.24)) * 1.8;
           state.spinFast = false;
-          // Leave targetRotX/Y untouched — rotation holds wherever it was
           state.targetShake = 0;
         } else if (hand.gesture === "two_fingers") {
           // Pan: midpoint of index tip (8) and middle tip (12)
