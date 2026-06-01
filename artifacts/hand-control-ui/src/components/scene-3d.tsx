@@ -1,46 +1,83 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState, useCallback } from "react";
 import { HandFrame } from "@/lib/hand-api";
+import { Mesh, Vertex, makeCube, makeIcosphere, makeNgon, parseOBJ, cloneMesh } from "@/lib/mesh";
+
+// ── 3-D math ──────────────────────────────────────────────────────────────────
 
 interface Vec3 { x: number; y: number; z: number; }
 
 function rotateX(v: Vec3, a: number): Vec3 {
   const c = Math.cos(a), s = Math.sin(a);
-  return { x: v.x, y: v.y * c - v.z * s, z: v.y * s + v.z * c };
+  return { x: v.x, y: v.y*c - v.z*s, z: v.y*s + v.z*c };
 }
 function rotateY(v: Vec3, a: number): Vec3 {
   const c = Math.cos(a), s = Math.sin(a);
-  return { x: v.x * c + v.z * s, y: v.y, z: -v.x * s + v.z * c };
+  return { x: v.x*c + v.z*s, y: v.y, z: -v.x*s + v.z*c };
 }
-function project(v: Vec3, cx: number, cy: number, fov: number, camDist: number): [number, number] {
-  const d = v.z + camDist;
+function project(v: Vec3, cx: number, cy: number, fov: number, cd: number): [number,number] {
+  const d = v.z + cd;
   const s = fov / d;
-  return [cx + v.x * s, cy - v.y * s];
+  return [cx + v.x*s, cy - v.y*s];
 }
 
-const VERTS: Vec3[] = [
-  { x: -1, y: -1, z: -1 }, { x:  1, y: -1, z: -1 },
-  { x:  1, y:  1, z: -1 }, { x: -1, y:  1, z: -1 },
-  { x: -1, y: -1, z:  1 }, { x:  1, y: -1, z:  1 },
-  { x:  1, y:  1, z:  1 }, { x: -1, y:  1, z:  1 },
-];
-
-const FACES: { idx: [number,number,number,number]; nx: number; ny: number; nz: number; rgb: [number,number,number] }[] = [
-  { idx: [4,5,6,7], nx:  0, ny:  0, nz:  1, rgb: [255, 229,   0] },
-  { idx: [1,0,3,2], nx:  0, ny:  0, nz: -1, rgb: [255, 160,   0] },
-  { idx: [0,4,7,3], nx: -1, ny:  0, nz:  0, rgb: [255, 200,  30] },
-  { idx: [5,1,2,6], nx:  1, ny:  0, nz:  0, rgb: [255, 240, 100] },
-  { idx: [7,6,2,3], nx:  0, ny:  1, nz:  0, rgb: [255, 255, 160] },
-  { idx: [0,1,5,4], nx:  0, ny: -1, nz:  0, rgb: [180, 140, 255] },
-];
-
-function apparentHandSize(lms: HandFrame["hands"][0]["landmarks"]): number {
+function apparentHandSize(lms: Vertex[]): number {
   const w = lms[0], m = lms[9];
   if (!w || !m) return 0.16;
-  return Math.sqrt((w.x - m.x) ** 2 + (w.y - m.y) ** 2);
+  return Math.sqrt((w.x-m.x)**2 + (w.y-m.y)**2);
+}
+
+// ── Edit-mode mesh operations ─────────────────────────────────────────────────
+
+function sculptMesh(
+  mesh: Mesh,
+  fingerScreenX: number, fingerScreenY: number,
+  pushStrength: number,
+  cx: number, cy: number, fov: number, camDist: number,
+  rX: number, rY: number, r: number,
+) {
+  const BRUSH = r * 0.55;
+  for (const v of mesh.verts) {
+    let p: Vec3 = { x: v.x*r, y: v.y*r, z: v.z*r };
+    p = rotateX(p, rX);
+    p = rotateY(p, rY);
+    const [px, py] = project(p, cx, cy, fov, camDist);
+    const dist = Math.sqrt((px - fingerScreenX)**2 + (py - fingerScreenY)**2);
+    const influence = Math.max(0, 1 - dist / BRUSH);
+    if (influence < 0.02) continue;
+    const len = Math.sqrt(v.x**2 + v.y**2 + v.z**2) || 1;
+    v.x += (v.x / len) * pushStrength * influence;
+    v.y += (v.y / len) * pushStrength * influence;
+    v.z += (v.z / len) * pushStrength * influence;
+  }
+}
+
+function flattenMesh(mesh: Mesh, strength: number) {
+  const meanY = mesh.verts.reduce((s, v) => s + v.y, 0) / mesh.verts.length;
+  for (const v of mesh.verts) v.y += (meanY - v.y) * strength;
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
+type MeshType = "cube" | "icosphere" | "ngon" | "custom";
+
+function freshMesh(type: MeshType, custom: Mesh | null): Mesh {
+  switch (type) {
+    case "icosphere": return makeIcosphere(1);
+    case "ngon":      return makeNgon(6);
+    case "custom":    return custom ? cloneMesh(custom) : makeCube();
+    default:          return makeCube();
+  }
 }
 
 export function Scene3D({ frame }: { frame: HandFrame | null }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [meshType, setMeshType]   = useState<MeshType>("cube");
+  const [customMesh, setCustomMesh] = useState<Mesh | null>(null);
+
+  const meshRef  = useRef<Mesh>(makeCube());
+  const frameRef = useRef<HandFrame | null>(null);
+  frameRef.current = frame;
+
   const stateRef = useRef({
     rotX: 0.4, rotY: 0.6,
     targetRotX: 0.4, targetRotY: 0.6,
@@ -49,21 +86,37 @@ export function Scene3D({ frame }: { frame: HandFrame | null }) {
     targetPanX: 0, targetPanY: 0,
     spinFast: false,
     shake: 0, targetShake: 0,
-    // Two-hand physics
+    // physics
     velX: 0, velY: 0,
     thrown: false,
     gravityOn: false,
     gravityPulse: 0,
-    twoHandMode: false,
+    // edit mode
+    editMode: false,
+    editTool: "",
   });
-  const frameRef = useRef<HandFrame | null>(null);
-  frameRef.current = frame;
-  const rafRef = useRef<number>(0);
 
-  // Velocity tracking for two-hand gestures
-  const prevPalmsRef = useRef<{ lx: number; ly: number; rx: number; ry: number } | null>(null);
-  const prevPalmTimeRef = useRef<number>(0);
-  const throwCooldownRef = useRef<number>(0);
+  const prevPalmsRef    = useRef<{ lx:number; ly:number; rx:number; ry:number }|null>(null);
+  const prevPalmTimeRef = useRef(0);
+  const throwCooldown   = useRef(0);
+  const editPrevRef     = useRef<{ x:number; y:number }|null>(null);
+  const rafRef          = useRef(0);
+
+  // Reset mesh when type or custom source changes
+  useEffect(() => {
+    meshRef.current = freshMesh(meshType, customMesh);
+    const s = stateRef.current;
+    s.thrown = false; s.velX = 0; s.velY = 0;
+    s.panX = 0; s.panY = 0; s.targetPanX = 0; s.targetPanY = 0;
+  }, [meshType, customMesh]);
+
+  const handleOBJImport = useCallback((text: string) => {
+    const m = parseOBJ(text);
+    if (m) { setCustomMesh(m); setMeshType("custom"); }
+    else alert("Could not parse OBJ — ensure the file has valid v and f entries.");
+  }, []);
+
+  // ── Canvas render loop ────────────────────────────────────────────────────
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -82,285 +135,293 @@ export function Scene3D({ frame }: { frame: HandFrame | null }) {
       const W = canvas.offsetWidth;
       const H = canvas.offsetHeight;
 
-      // ── Two-hand gesture detection ──────────────────────────────────────────
+      // ── Two-hand / edit-mode detection ──────────────────────────────────
       const hands = frameRef.current?.hands ?? [];
-      const leftHand  = hands.find(h => h.handedness === "Left");
-      const rightHand = hands.find(h => h.handedness === "Right");
-      const bothOpen  = leftHand?.gesture === "open_hand" && rightHand?.gesture === "open_hand";
 
-      throwCooldownRef.current = Math.max(0, throwCooldownRef.current - dt);
+      const anchorHand = hands.find(h => h.gesture === "pinch");
+      const toolHand   = anchorHand != null ? hands.find(h => h !== anchorHand) : null;
+      const inEditMode = anchorHand != null && toolHand != null;
 
-      // Gravity is automatically on when both hands are open
-      const prevGravity = state.gravityOn;
-      state.gravityOn = bothOpen;
-      if (state.gravityOn && !prevGravity) state.gravityPulse = 1.6;
-      if (!state.gravityOn && prevGravity)  state.gravityPulse = 1.6;
+      throwCooldown.current = Math.max(0, throwCooldown.current - dt);
 
-      let palmVelX = 0, palmVelY = 0;
+      if (inEditMode) {
+        state.editMode = true;
+        state.thrown = false; state.velX = 0; state.velY = 0;
+        state.targetShake = 0;
+        // Gravity never auto-on in edit mode
+        const prevG = state.gravityOn;
+        state.gravityOn = false;
+        if (prevG) state.gravityPulse = 1.6;
 
-      if (bothOpen && leftHand && rightHand) {
-        const lp = leftHand.landmarks[9];
-        const rp = rightHand.landmarks[9];
+        const tool = toolHand!.gesture;
+        const lms  = toolHand!.landmarks;
+        state.editTool = tool;
 
-        if (lp && rp) {
-          const elapsed = (now - prevPalmTimeRef.current) / 1000;
+        // Compute draw params for sculpt projection
+        const r       = Math.min(W, H) * 0.26 * state.scale;
+        const camDist = r * 5;
+        const fov     = r * 3.5;
+        const cx      = W / 2 + state.panX;
+        const cy      = H / 2 + state.panY;
 
-          if (prevPalmsRef.current && elapsed > 0.01 && elapsed < 0.25) {
-            const prev = prevPalmsRef.current;
-            // Velocity in normalised coords/sec — flip X for mirror
-            const lvx = -(lp.x - prev.lx) / elapsed;
-            const lvy =  (lp.y - prev.ly) / elapsed;
-            const rvx = -(rp.x - prev.rx) / elapsed;
-            const rvy =  (rp.y - prev.ry) / elapsed;
-            palmVelX = (lvx + rvx) / 2;
-            palmVelY = (lvy + rvy) / 2;
+        if (tool === "open_hand") {
+          // a. Rotate
+          const palm = lms[9], idx = lms[8];
+          if (palm && idx) {
+            state.targetRotY = -(idx.x - palm.x) * Math.PI * 7;
+            state.targetRotX =  (idx.y - palm.y) * Math.PI * 7;
           }
-
-          prevPalmsRef.current = { lx: lp.x, ly: lp.y, rx: rp.x, ry: rp.y };
-          prevPalmTimeRef.current = now;
-        }
-
-        state.twoHandMode = true;
-
-        // Throw: fast swipe in any direction
-        const speed = Math.sqrt(palmVelX ** 2 + palmVelY ** 2);
-        if (speed > 1.8 && throwCooldownRef.current <= 0) {
-          state.velX = palmVelX * W * 0.55;
-          state.velY = palmVelY * H * 0.55;
-          state.thrown = true;
-          throwCooldownRef.current = 0.9;
+          editPrevRef.current = null;
+        } else if (tool === "point") {
+          // b. Sculpt — inflate/deflate vertices near index fingertip
+          const tip = lms[8];
+          if (tip && editPrevRef.current) {
+            const dy = tip.y - editPrevRef.current.y;
+            if (Math.abs(dy) > 0.002) {
+              // Hand moving UP (dy < 0) → inflate; DOWN → deflate
+              const push = -(dy) * 0.45;
+              sculptMesh(
+                meshRef.current,
+                (1 - tip.x) * W, tip.y * H, push,
+                cx, cy, fov, camDist, state.rotX, state.rotY, r,
+              );
+            }
+          }
+          editPrevRef.current = lms[8] ? { x: lms[8].x, y: lms[8].y } : null;
+        } else if (tool === "two_fingers") {
+          // c. Scale by pivot point (palm drives scale)
+          const palm = lms[9];
+          if (palm && editPrevRef.current) {
+            const dy = palm.y - editPrevRef.current.y;
+            state.targetScale = Math.max(0.25, Math.min(3.5, state.targetScale * (1 + (-dy) * 3)));
+          }
+          editPrevRef.current = lms[9] ? { x: lms[9].x, y: lms[9].y } : null;
+        } else if (tool === "three_fingers") {
+          // d. Flatten toward median Y
+          flattenMesh(meshRef.current, 0.04);
+          editPrevRef.current = null;
+        } else {
+          editPrevRef.current = null;
         }
       } else {
-        state.twoHandMode = false;
-        prevPalmsRef.current = null;
+        state.editMode = false;
+        state.editTool = "";
+        editPrevRef.current = null;
 
-        // Single-hand catch while cube is in flight
-        const catchHand = hands[0];
-        if (state.thrown && catchHand?.gesture === "fist") {
-          state.thrown = false;
-          state.velX = 0;
-          state.velY = 0;
-          state.targetPanX = 0;
-          state.targetPanY = 0;
-        }
-      }
+        // ── Two-hand physics ───────────────────────────────────────────
+        const leftHand  = hands.find(h => h.handedness === "Left");
+        const rightHand = hands.find(h => h.handedness === "Right");
+        const bothOpen  = leftHand?.gesture === "open_hand" && rightHand?.gesture === "open_hand";
 
-      // ── Physics update ──────────────────────────────────────────────────────
-      if (state.thrown) {
-        const r_est = Math.min(W, H) * 0.26 * state.scale;
-        const margin = r_est;
-        const maxX = W / 2 - margin;
-        const maxY = H / 2 - margin;
+        const prevG = state.gravityOn;
+        state.gravityOn = bothOpen;
+        if (state.gravityOn !== prevG) state.gravityPulse = 1.6;
 
-        if (state.gravityOn) {
-          state.velY += 380 * dt;
-        }
+        let palmVelX = 0, palmVelY = 0;
 
-        // Air resistance
-        const fx = state.gravityOn ? 0.5 : 1.4;
-        const fy = state.gravityOn ? 0.3 : 1.4;
-        state.velX *= Math.exp(-fx * dt);
-        state.velY *= Math.exp(-fy * dt);
-
-        state.targetPanX = state.panX + state.velX * dt;
-        state.targetPanY = state.panY + state.velY * dt;
-
-        // Bounce
-        if (Math.abs(state.targetPanX) > maxX) {
-          state.targetPanX = Math.sign(state.targetPanX) * maxX;
-          state.velX *= -0.62;
-        }
-        if (Math.abs(state.targetPanY) > maxY) {
-          state.targetPanY = Math.sign(state.targetPanY) * maxY;
-          state.velY *= -0.55;
-          state.velX *= 0.84; // rolling friction on floor bounce
-        }
-
-        // Spin while airborne
-        state.targetRotY += (state.velX / (W * 0.5)) * dt * 5;
-        state.targetRotX += (state.velY / (H * 0.5)) * dt * 5;
-
-        // Settle when still (gravity off only — with gravity on it stays on the floor)
-        const stillX = Math.abs(state.velX) < 8;
-        const stillY = Math.abs(state.velY) < 8;
-        if (stillX && stillY && !state.gravityOn) {
-          state.thrown = false;
-          state.velX = 0;
-          state.velY = 0;
-        }
-      }
-
-      // ── Single-hand gesture controls (inactive while thrown or both open) ───
-      if (!state.thrown && !bothOpen) {
-        const hand = frameRef.current?.hands[0];
-        if (hand) {
-          if (hand.gesture === "open_hand") {
-            const palm = hand.landmarks[9];
-            const idx  = hand.landmarks[8];
-            if (palm) {
-              state.targetPanX = (0.5 - palm.x) * W * 0.9;
-              state.targetPanY = (palm.y - 0.5) * H * 0.9;
+        if (bothOpen && leftHand && rightHand) {
+          const lp = leftHand.landmarks[9];
+          const rp = rightHand.landmarks[9];
+          if (lp && rp) {
+            const elapsed = (now - prevPalmTimeRef.current) / 1000;
+            if (prevPalmsRef.current && elapsed > 0.01 && elapsed < 0.25) {
+              const prev = prevPalmsRef.current;
+              palmVelX = ((-(lp.x - prev.lx) + -(rp.x - prev.rx)) / 2) / elapsed;
+              palmVelY = (( (lp.y - prev.ly) +  (rp.y - prev.ry)) / 2) / elapsed;
             }
-            if (palm && idx) {
-              const relX = idx.x - palm.x;
-              const relY = idx.y - palm.y;
-              state.targetRotY = -relX * Math.PI * 7;
-              state.targetRotX =  relY * Math.PI * 7;
-            }
-            const sz = apparentHandSize(hand.landmarks);
-            state.targetScale = 0.4 + Math.max(0, Math.min(1, (sz - 0.08) / 0.24)) * 1.8;
-            state.spinFast = false;
-            state.targetShake = 0;
-          } else if (hand.gesture === "two_fingers") {
-            const i8  = hand.landmarks[8];
-            const i12 = hand.landmarks[12];
-            if (i8 && i12) {
-              const midX = (i8.x + i12.x) / 2;
-              const midY = (i8.y + i12.y) / 2;
-              state.targetPanX = (0.5 - midX) * W * 0.85;
-              state.targetPanY = (midY - 0.5) * H * 0.85;
-            }
-            state.spinFast = false;
-            state.targetScale = 1;
-            state.targetShake = 0;
-          } else if (hand.gesture === "point") {
-            state.spinFast = true;
-            state.targetScale = 1;
-            state.targetPanX = 0;
-            state.targetPanY = 0;
-            state.targetShake = 0;
-          } else if (hand.gesture === "pinch") {
-            state.spinFast = false;
-            state.targetScale = 1.4;
-            state.targetPanX = 0;
-            state.targetPanY = 0;
-            state.targetShake = 0;
-          } else if (hand.gesture === "fist") {
-            state.spinFast = true;
-            state.targetScale = 0.45;
-            state.targetPanX = 0;
-            state.targetPanY = 0;
-            state.targetShake = 10;
-          } else if (hand.gesture === "thumbs_up") {
-            state.spinFast = false;
-            state.targetScale = 1.6;
-            state.targetRotX += dt * 1.5;
-            state.targetPanX = 0;
-            state.targetPanY = 0;
-            state.targetShake = 0;
-          } else {
-            state.spinFast = false;
-            state.targetScale = 1;
-            state.targetPanX = 0;
-            state.targetPanY = 0;
-            state.targetShake = 0;
+            prevPalmsRef.current = { lx: lp.x, ly: lp.y, rx: rp.x, ry: rp.y };
+            prevPalmTimeRef.current = now;
+          }
+          const speed = Math.sqrt(palmVelX**2 + palmVelY**2);
+          if (speed > 1.8 && throwCooldown.current <= 0) {
+            state.velX =  palmVelX * W * 0.55;
+            state.velY = -palmVelY * H * 0.55;
+            state.thrown = true;
+            throwCooldown.current = 0.9;
           }
         } else {
-          state.spinFast = false;
-          state.targetRotY += dt * 0.5;
-          state.targetRotX += dt * 0.2;
-          state.targetScale = 1;
-          state.targetPanX = 0;
-          state.targetPanY = 0;
-          state.targetShake = 0;
+          prevPalmsRef.current = null;
+          if (state.thrown && hands[0]?.gesture === "fist") {
+            state.thrown = false; state.velX = 0; state.velY = 0;
+            state.targetPanX = 0; state.targetPanY = 0;
+          }
+        }
+
+        // Physics
+        if (state.thrown) {
+          if (state.gravityOn) state.velY += 380 * dt;
+          state.velX *= Math.exp(-(state.gravityOn ? 0.5 : 1.4) * dt);
+          state.velY *= Math.exp(-(state.gravityOn ? 0.3 : 1.4) * dt);
+          state.targetPanX = state.panX + state.velX * dt;
+          state.targetPanY = state.panY + state.velY * dt;
+          const r_est = Math.min(W, H) * 0.26 * state.scale;
+          const mX = W/2 - r_est, mY = H/2 - r_est;
+          if (Math.abs(state.targetPanX) > mX) { state.targetPanX = Math.sign(state.targetPanX)*mX; state.velX *= -0.62; }
+          if (Math.abs(state.targetPanY) > mY) { state.targetPanY = Math.sign(state.targetPanY)*mY; state.velY *= -0.55; state.velX *= 0.84; }
+          state.targetRotY += (state.velX / (W*0.5)) * dt * 5;
+          state.targetRotX += (state.velY / (H*0.5)) * dt * 5;
+          if (!state.gravityOn && Math.abs(state.velX) < 8 && Math.abs(state.velY) < 8)
+            { state.thrown = false; state.velX = 0; state.velY = 0; }
+        }
+
+        // ── Single-hand gesture controls ───────────────────────────────
+        if (!state.thrown && !bothOpen) {
+          const hand = frameRef.current?.hands[0];
+          if (hand) {
+            if (hand.gesture === "open_hand") {
+              const palm = hand.landmarks[9], idx = hand.landmarks[8];
+              if (palm) { state.targetPanX = (0.5-palm.x)*W*0.9; state.targetPanY = (palm.y-0.5)*H*0.9; }
+              if (palm && idx) { state.targetRotY = -(idx.x-palm.x)*Math.PI*7; state.targetRotX = (idx.y-palm.y)*Math.PI*7; }
+              const sz = apparentHandSize(hand.landmarks);
+              state.targetScale = 0.4 + Math.max(0, Math.min(1, (sz-0.08)/0.24)) * 1.8;
+              state.spinFast = false; state.targetShake = 0;
+            } else if (hand.gesture === "two_fingers") {
+              const i8 = hand.landmarks[8], i12 = hand.landmarks[12];
+              if (i8 && i12) {
+                state.targetPanX = (0.5-(i8.x+i12.x)/2)*W*0.85;
+                state.targetPanY = (((i8.y+i12.y)/2)-0.5)*H*0.85;
+              }
+              state.spinFast = false; state.targetScale = 1; state.targetShake = 0;
+            } else if (hand.gesture === "point") {
+              state.spinFast = true; state.targetScale = 1; state.targetPanX = 0; state.targetPanY = 0; state.targetShake = 0;
+            } else if (hand.gesture === "pinch") {
+              state.spinFast = false; state.targetScale = 1.4; state.targetPanX = 0; state.targetPanY = 0; state.targetShake = 0;
+            } else if (hand.gesture === "fist") {
+              state.spinFast = true; state.targetScale = 0.45; state.targetPanX = 0; state.targetPanY = 0; state.targetShake = 10;
+            } else if (hand.gesture === "thumbs_up") {
+              state.spinFast = false; state.targetScale = 1.6; state.targetRotX += dt*1.5; state.targetPanX = 0; state.targetPanY = 0; state.targetShake = 0;
+            } else {
+              state.spinFast = false; state.targetScale = 1; state.targetPanX = 0; state.targetPanY = 0; state.targetShake = 0;
+            }
+          } else {
+            state.spinFast = false; state.targetRotY += dt*0.5; state.targetRotX += dt*0.2;
+            state.targetScale = 1; state.targetPanX = 0; state.targetPanY = 0; state.targetShake = 0;
+          }
         }
       }
 
-      // ── Easing ──────────────────────────────────────────────────────────────
-      const ease = 1 - Math.exp(-8 * dt);
+      state.gravityPulse = Math.max(0, state.gravityPulse - dt*3);
 
-      // Physics mode uses a faster snap so physics feels responsive
+      // ── Easing ──────────────────────────────────────────────────────────
+      const ease    = 1 - Math.exp(-8*dt);
       const posEase = state.thrown ? 1 : ease;
 
-      if (state.spinFast) {
-        state.rotX += dt * 4;
-        state.rotY += dt * 4;
-      } else {
-        state.rotX += (state.targetRotX - state.rotX) * ease;
-        state.rotY += (state.targetRotY - state.rotY) * ease;
-      }
-      state.scale += (state.targetScale - state.scale) * ease;
-      state.panX  += (state.targetPanX  - state.panX)  * posEase;
-      state.panY  += (state.targetPanY  - state.panY)  * posEase;
-      state.shake += (state.targetShake - state.shake)  * (1 - Math.exp(-12 * dt));
+      if (state.spinFast) { state.rotX += dt*4; state.rotY += dt*4; }
+      else { state.rotX += (state.targetRotX - state.rotX)*ease; state.rotY += (state.targetRotY - state.rotY)*ease; }
 
-      // Decay gravity pulse
-      state.gravityPulse = Math.max(0, state.gravityPulse - dt * 3);
+      state.scale  += (state.targetScale - state.scale)*ease;
+      state.panX   += (state.targetPanX  - state.panX)*posEase;
+      state.panY   += (state.targetPanY  - state.panY)*posEase;
+      state.shake  += (state.targetShake - state.shake)*(1 - Math.exp(-12*dt));
 
-      if (canvas.width !== W || canvas.height !== H) {
-        canvas.width = W; canvas.height = H;
-      }
+      // ── Resize ──────────────────────────────────────────────────────────
+      if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
 
       ctx.clearRect(0, 0, W, H);
 
-      // Gravity-pulse flash overlay
+      // Edit mode tint
+      if (state.editMode) {
+        ctx.fillStyle = "rgba(139,92,246,0.04)";
+        ctx.fillRect(0, 0, W, H);
+      }
+
+      // Gravity pulse flash
       if (state.gravityPulse > 0) {
-        const alpha = state.gravityPulse * 0.12;
-        ctx.fillStyle = state.gravityOn
-          ? `rgba(139,92,246,${alpha})`
-          : `rgba(255,200,0,${alpha})`;
+        const a = state.gravityPulse * 0.11;
+        ctx.fillStyle = state.gravityOn ? `rgba(139,92,246,${a})` : `rgba(255,200,0,${a})`;
         ctx.fillRect(0, 0, W, H);
       }
 
       // Subtle grid
-      ctx.strokeStyle = "rgba(98,91,246,0.06)";
+      ctx.strokeStyle = state.editMode ? "rgba(139,92,246,0.10)" : "rgba(98,91,246,0.06)";
       ctx.lineWidth = 1;
       const gs = 36;
-      for (let x = 0; x <= W; x += gs) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
-      for (let y = 0; y <= H; y += gs) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+      for (let x = 0; x <= W; x += gs) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+      for (let y = 0; y <= H; y += gs) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
 
-      const jx = state.shake > 0.5 ? (Math.random() - 0.5) * state.shake * 2 : 0;
-      const jy = state.shake > 0.5 ? (Math.random() - 0.5) * state.shake * 2 : 0;
-      const cx = W / 2 + state.panX + jx;
-      const cy = H / 2 + state.panY + jy;
+      // Centre
+      const jx = state.shake > 0.5 ? (Math.random()-0.5)*state.shake*2 : 0;
+      const jy = state.shake > 0.5 ? (Math.random()-0.5)*state.shake*2 : 0;
+      const cx = W/2 + state.panX + jx;
+      const cy = H/2 + state.panY + jy;
 
-      const r = Math.min(W, H) * 0.26 * state.scale;
+      const r       = Math.min(W, H) * 0.26 * state.scale;
       const camDist = r * 5;
-      const fov = r * 3.5;
+      const fov     = r * 3.5;
 
-      const tv = VERTS.map((v) => {
-        let p = { x: v.x * r, y: v.y * r, z: v.z * r };
+      // Transform vertices
+      const mesh = meshRef.current;
+      const tv = mesh.verts.map(v => {
+        let p: Vec3 = { x: v.x*r, y: v.y*r, z: v.z*r };
         p = rotateX(p, state.rotX);
         p = rotateY(p, state.rotY);
         return p;
       });
 
-      const sorted = FACES.map((f) => {
-        const depth = f.idx.reduce((s, i) => s + tv[i].z, 0) / 4;
+      // Sort faces back-to-front
+      const sorted = mesh.faces.map(f => {
+        const depth = f.indices.reduce((s, i) => s + (tv[i]?.z ?? 0), 0) / f.indices.length;
         return { ...f, depth };
       }).sort((a, b) => a.depth - b.depth);
 
-      sorted.forEach(({ idx, depth, rgb }) => {
-        const pts = idx.map((i) => project(tv[i], cx, cy, fov, camDist));
-        const light = Math.max(0, Math.min(1, (depth / r + 1) / 2));
+      sorted.forEach(({ indices, depth, color }) => {
+        const pts = indices.map(i => {
+          const p = tv[i];
+          return p ? project(p, cx, cy, fov, camDist) : [cx, cy] as [number,number];
+        });
+
+        const light = Math.max(0, Math.min(1, (depth/r + 1)/2));
+        const [r0, g0, b0] = color;
 
         ctx.beginPath();
         ctx.moveTo(pts[0][0], pts[0][1]);
         pts.slice(1).forEach(([px, py]) => ctx.lineTo(px, py));
         ctx.closePath();
 
-        const [r0, g0, b0] = rgb;
-        const alpha = 0.22 + light * 0.55;
-        ctx.fillStyle = `rgba(${r0}, ${g0}, ${b0}, ${alpha})`;
+        // In edit mode, slightly highlight each face with purple
+        const editBias = state.editMode ? 0.08 : 0;
+        const alpha = 0.22 + light*0.55;
+        ctx.fillStyle = state.editMode
+          ? `rgba(${Math.round(r0*0.75+139*0.25)},${Math.round(g0*0.75+92*0.25)},${Math.round(b0*0.75+246*0.25)},${alpha})`
+          : `rgba(${r0},${g0},${b0},${alpha})`;
         ctx.fill();
 
-        const edgeAlpha = 0.35 + light * 0.45;
-        ctx.strokeStyle = `rgba(${Math.round(r0 * 0.4 + 98 * 0.6)}, ${Math.round(g0 * 0.2 + 91 * 0.8)}, ${Math.round(b0 * 0.3 + 246 * 0.7)}, ${edgeAlpha})`;
-        ctx.lineWidth = 2;
+        const edgeA = 0.35 + light*0.45 + editBias;
+        ctx.strokeStyle = `rgba(${Math.round(r0*0.4+98*0.6)},${Math.round(g0*0.2+91*0.8)},${Math.round(b0*0.3+246*0.7)},${edgeA})`;
+        ctx.lineWidth = state.editMode ? 1.5 : 2;
         ctx.stroke();
       });
 
-      // Soft shadow (hides when cube is in the air)
-      const airFactor = state.thrown ? Math.max(0, 1 - Math.abs(state.panY) / (H * 0.4)) : 1;
+      // Soft shadow
+      const airFactor = state.thrown ? Math.max(0, 1 - Math.abs(state.panY)/(H*0.4)) : 1;
       if (airFactor > 0) {
-        const shadowY = H / 2 + (state.thrown ? H * 0.42 : state.panY + r * 0.85);
-        const sg = ctx.createRadialGradient(cx, shadowY, 0, cx, shadowY, r * 0.9);
-        sg.addColorStop(0, `rgba(0,0,0,${0.12 * airFactor})`);
+        const shadowY = H/2 + (state.thrown ? H*0.42 : state.panY + r*0.85);
+        const sg = ctx.createRadialGradient(cx, shadowY, 0, cx, shadowY, r*0.9);
+        sg.addColorStop(0, `rgba(0,0,0,${0.12*airFactor})`);
         sg.addColorStop(1, "rgba(0,0,0,0)");
         ctx.beginPath();
-        ctx.ellipse(cx, shadowY, r * 0.9, r * 0.18, 0, 0, Math.PI * 2);
+        ctx.ellipse(cx, shadowY, r*0.9, r*0.18, 0, 0, Math.PI*2);
         ctx.fillStyle = sg;
         ctx.fill();
+      }
+
+      // Draw sculpt brush cursor when sculpting
+      if (state.editMode && frameRef.current?.hands) {
+        const toolH = frameRef.current.hands.find(h => h.gesture !== "pinch");
+        if (toolH?.gesture === "point") {
+          const tip = toolH.landmarks[8];
+          if (tip) {
+            const bx = (1 - tip.x) * W;
+            const by = tip.y * H;
+            ctx.beginPath();
+            ctx.arc(bx, by, r*0.55, 0, Math.PI*2);
+            ctx.strokeStyle = "rgba(139,92,246,0.5)";
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([4, 4]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          }
+        }
       }
 
       rafRef.current = requestAnimationFrame(draw);
@@ -374,85 +435,148 @@ export function Scene3D({ frame }: { frame: HandFrame | null }) {
     <div className="w-full h-full rounded-lg overflow-hidden border-2 border-border bg-[#FAFAF8] relative">
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
 
-      {/* Static label */}
-      <div className="absolute top-3 left-3 pointer-events-none">
+      {/* Viewport label */}
+      <div className="absolute top-3 left-3 pointer-events-none z-10">
         <span className="font-bold text-xs tracking-widest uppercase bg-white/80 px-2 py-1 rounded border border-border/20 text-foreground backdrop-blur-sm">
           Viewport
         </span>
       </div>
 
-      {/* Two-hand mode HUD */}
-      <TwoHandHUD frameRef={frameRef} stateRef={stateRef} />
+      {/* Toolbar — pushed below the label row */}
+      <div className="absolute top-10 left-0 right-0 flex justify-center pointer-events-none z-10">
+        <MeshToolbar meshType={meshType} onMeshChange={setMeshType} onOBJImport={handleOBJImport} />
+      </div>
+
+      {/* HUD */}
+      <SceneHUD stateRef={stateRef} />
+
+      {/* Edit hint */}
+      <div className="absolute bottom-3 left-3 pointer-events-none z-10">
+        <span className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground/60">
+          Pinch + Open Hand = Edit Mode
+        </span>
+      </div>
     </div>
   );
 }
 
-// ── Two-hand HUD overlay (React state-driven, separate from canvas) ───────────
+// ── Mesh toolbar ──────────────────────────────────────────────────────────────
 
-import { useState, useEffect as useEff, useRef as useR } from "react";
+const btnBase: React.CSSProperties = {
+  background: "linear-gradient(160deg,#ffffff 0%,#f5f4ef 100%)",
+  border: "1.5px solid rgba(0,0,0,0.75)",
+  boxShadow: "1px 1px 0 rgba(0,0,0,0.6)",
+  padding: "3px 9px",
+  fontSize: 10,
+  fontWeight: 800,
+  letterSpacing: "0.08em",
+  textTransform: "uppercase" as const,
+  cursor: "pointer",
+  borderRadius: 3,
+  color: "#000",
+};
 
-function TwoHandHUD({
-  frameRef,
-  stateRef,
+const btnActive: React.CSSProperties = {
+  ...btnBase,
+  background: "#FFE500",
+  boxShadow: "inset 1px 1px 0 rgba(255,255,255,0.8), 1px 1px 0 rgba(0,0,0,0.6)",
+};
+
+function MeshToolbar({
+  meshType,
+  onMeshChange,
+  onOBJImport,
 }: {
-  frameRef: React.RefObject<HandFrame | null>;
-  stateRef: React.RefObject<{
-    twoHandMode: boolean;
-    gravityOn: boolean;
-    thrown: boolean;
-  }>;
+  meshType: MeshType;
+  onMeshChange: (t: MeshType) => void;
+  onOBJImport: (text: string) => void;
 }) {
-  const [visible, setVisible] = useState(false);
-  const [gravityOn, setGravityOn] = useState(false);
-  const [thrown, setThrown] = useState(false);
-  const rafRef = useR<number>(0);
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  useEff(() => {
-    function tick() {
-      const s = stateRef.current;
-      setVisible(s.twoHandMode);
-      setGravityOn(s.gravityOn);
-      setThrown(s.thrown);
-      rafRef.current = requestAnimationFrame(tick);
-    }
-    rafRef.current = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafRef.current);
-  }, [stateRef]);
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => { const t = ev.target?.result as string; if (t) onOBJImport(t); };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
 
-  if (!visible && !thrown) return null;
+  const shapes: { key: MeshType; label: string }[] = [
+    { key: "cube",      label: "Cube"   },
+    { key: "icosphere", label: "Sphere" },
+    { key: "ngon",      label: "Prism"  },
+  ];
 
   return (
-    <div className="absolute bottom-3 right-3 pointer-events-none flex flex-col items-end gap-1.5">
-      {thrown && (
-        <span className="text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded"
-          style={{
-            background: "rgba(255,229,0,0.9)",
-            border: "1px solid rgba(0,0,0,0.5)",
-            boxShadow: "1px 1px 0 rgba(0,0,0,0.4)",
-            color: "#000",
-          }}>
-          IN FLIGHT
-        </span>
-      )}
-      <span className="text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded"
+    <div className="absolute top-3 left-0 right-0 flex justify-center pointer-events-none z-10">
+      <div
+        className="flex items-center gap-1 pointer-events-auto px-2 py-1 rounded"
         style={{
-          background: gravityOn ? "rgba(139,92,246,0.92)" : "rgba(255,255,255,0.88)",
-          border: "1px solid rgba(0,0,0,0.5)",
-          boxShadow: "1px 1px 0 rgba(0,0,0,0.4)",
-          color: gravityOn ? "#fff" : "#555",
-        }}>
-        {gravityOn ? "GRAVITY ON" : "GRAVITY OFF"}
-      </span>
-      {visible && (
-        <span className="text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded"
-          style={{
-            background: "rgba(0,0,0,0.78)",
-            border: "1px solid rgba(255,255,255,0.15)",
-            color: "rgba(255,255,255,0.9)",
-          }}>
-          TWO-HAND MODE
+          background: "rgba(255,255,255,0.92)",
+          border: "1.5px solid rgba(0,0,0,0.7)",
+          boxShadow: "2px 2px 0 rgba(0,0,0,0.5)",
+          backdropFilter: "blur(4px)",
+        }}
+      >
+        {shapes.map(({ key, label }) => (
+          <button key={key} style={meshType === key ? btnActive : btnBase} onClick={() => onMeshChange(key)}>
+            {label}
+          </button>
+        ))}
+        <div style={{ width: 1, height: 14, background: "rgba(0,0,0,0.18)", margin: "0 2px" }} />
+        <button style={btnBase} onClick={() => fileRef.current?.click()}>Import OBJ</button>
+        <input ref={fileRef} type="file" accept=".obj" style={{ display: "none" }} onChange={handleFile} />
+      </div>
+    </div>
+  );
+}
+
+// ── HUD ───────────────────────────────────────────────────────────────────────
+
+const TOOL_LABELS: Record<string, string> = {
+  open_hand:    "ROTATE",
+  point:        "SCULPT",
+  two_fingers:  "SCALE",
+  three_fingers:"FLATTEN",
+};
+
+function SceneHUD({ stateRef }: { stateRef: React.RefObject<{ editMode: boolean; editTool: string; gravityOn: boolean; thrown: boolean }> }) {
+  const [info, setInfo] = useState({ editMode: false, editTool: "", gravityOn: false, thrown: false });
+  const raf = useRef(0);
+
+  useEffect(() => {
+    function tick() {
+      const s = stateRef.current;
+      setInfo({ editMode: s.editMode, editTool: s.editTool, gravityOn: s.gravityOn, thrown: s.thrown });
+      raf.current = requestAnimationFrame(tick);
+    }
+    raf.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf.current);
+  }, [stateRef]);
+
+  const badges: { label: string; bg: string; color: string }[] = [];
+  if (info.editMode) {
+    badges.push({ label: "EDIT MODE", bg: "rgba(139,92,246,0.92)", color: "#fff" });
+    const tl = TOOL_LABELS[info.editTool];
+    if (tl) badges.push({ label: tl, bg: "rgba(0,0,0,0.78)", color: "rgba(255,255,255,0.9)" });
+  } else {
+    if (info.thrown)    badges.push({ label: "IN FLIGHT",  bg: "rgba(255,229,0,0.92)",    color: "#000" });
+    if (info.gravityOn) badges.push({ label: "GRAVITY ON", bg: "rgba(139,92,246,0.92)",   color: "#fff" });
+  }
+
+  if (badges.length === 0) return null;
+
+  return (
+    <div className="absolute bottom-3 right-3 pointer-events-none flex flex-col items-end gap-1 z-10">
+      {badges.map(b => (
+        <span key={b.label}
+          className="text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded"
+          style={{ background: b.bg, border: "1px solid rgba(0,0,0,0.4)", boxShadow: "1px 1px 0 rgba(0,0,0,0.3)", color: b.color }}
+        >
+          {b.label}
         </span>
-      )}
+      ))}
     </div>
   );
 }

@@ -12,7 +12,7 @@ export type Hand = {
   handedness: "Left" | "Right";
   pinch_distance: number;
   is_open: boolean;
-  gesture: "pinch" | "open_hand" | "point" | "fist" | "thumbs_up" | "two_fingers" | "unknown";
+  gesture: "pinch" | "open_hand" | "point" | "fist" | "thumbs_up" | "two_fingers" | "three_fingers" | "unknown";
 };
 
 export type HandFrame = {
@@ -73,12 +73,14 @@ function classifyGesture(lms: Landmark[]): Hand["gesture"] {
   // Two fingers (peace): index + middle clearly up, ring + pinky clearly down
   if (indexUp && middleUp && ringDown && pinkyDown) return "two_fingers";
 
+  // Three fingers: index + middle + ring up, pinky clearly down
+  if (indexUp && middleUp && ringUp && pinkyDown) return "three_fingers";
+
   // Point: only index clearly up, middle clearly down
   if (indexUp && middleDown && ringDown) return "point";
 
-  // Open hand: 3+ fingers clearly extended
-  const extCount = [indexUp, middleUp, ringUp, pinkyUp].filter(Boolean).length;
-  if (extCount >= 3) return "open_hand";
+  // Open hand: all 4 fingers clearly extended
+  if (indexUp && middleUp && ringUp && pinkyUp) return "open_hand";
 
   // Fist: all 4 fingertips must be clearly below their MCP knuckles.
   // Checking tip vs MCP (not just PIP) requires a genuine full curl —

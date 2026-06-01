@@ -1,0 +1,1 @@
+- [WebGL in Replit preview](webgl-replit.md) — Replit preview sandbox has no GPU/WebGL; use Canvas 2D for 3D rendering.
