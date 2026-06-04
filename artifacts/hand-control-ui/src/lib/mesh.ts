@@ -146,6 +146,13 @@ export function parseOBJ(text: string): Mesh | null {
 
   if (rawVerts.length === 0 || faces.length === 0) return null;
 
+  // Cap face count so the renderer stays fast (back-face culling will halve it at runtime)
+  const MAX_FACES = 600;
+  const cappedFaces = faces.length > MAX_FACES
+    ? faces.filter((_, i) => i % Math.ceil(faces.length / MAX_FACES) === 0)
+        .map((f, i) => ({ ...f, color: col(i) }))
+    : faces;
+
   const cx = rawVerts.reduce((s,v) => s+v.x, 0) / rawVerts.length;
   const cy = rawVerts.reduce((s,v) => s+v.y, 0) / rawVerts.length;
   const cz = rawVerts.reduce((s,v) => s+v.z, 0) / rawVerts.length;
@@ -154,6 +161,6 @@ export function parseOBJ(text: string): Mesh | null {
 
   return {
     verts: rawVerts.map(v => ({ x: (v.x-cx)/maxR, y: (v.y-cy)/maxR, z: (v.z-cz)/maxR })),
-    faces,
+    faces: cappedFaces,
   };
 }

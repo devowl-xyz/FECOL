@@ -332,12 +332,14 @@ export function Scene3D({ frame }: { frame: HandFrame | null }) {
         ctx.fillRect(0, 0, W, H);
       }
 
-      // Subtle grid
+      // Subtle grid — single batched path (not one ctx.stroke() per line)
       ctx.strokeStyle = state.editMode ? "rgba(139,92,246,0.10)" : "rgba(98,91,246,0.06)";
       ctx.lineWidth = 1;
+      ctx.beginPath();
       const gs = 36;
-      for (let x = 0; x <= W; x += gs) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
-      for (let y = 0; y <= H; y += gs) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+      for (let x = 0; x <= W; x += gs) { ctx.moveTo(x,0); ctx.lineTo(x,H); }
+      for (let y = 0; y <= H; y += gs) { ctx.moveTo(0,y); ctx.lineTo(W,y); }
+      ctx.stroke();
 
       // Centre
       const jx = state.shake > 0.5 ? (Math.random()-0.5)*state.shake*2 : 0;
@@ -351,46 +353,68 @@ export function Scene3D({ frame }: { frame: HandFrame | null }) {
 
       // Transform vertices
       const mesh = meshRef.current;
-      const tv = mesh.verts.map(v => {
+      const fc = mesh.faces.length;
+      // Dense mesh: skip per-face strokes (too many edges = slow + noisy)
+      const denseMesh = fc > 80;
+
+      const tv: Vec3[] = new Array(mesh.verts.length);
+      for (let vi = 0; vi < mesh.verts.length; vi++) {
+        const v = mesh.verts[vi];
         let p: Vec3 = { x: v.x*r, y: v.y*r, z: v.z*r };
         p = rotateX(p, state.rotX);
         p = rotateY(p, state.rotY);
-        return p;
-      });
+        tv[vi] = p;
+      }
 
-      // Sort faces back-to-front
-      const sorted = mesh.faces.map(f => {
-        const depth = f.indices.reduce((s, i) => s + (tv[i]?.z ?? 0), 0) / f.indices.length;
-        return { ...f, depth };
-      }).sort((a, b) => a.depth - b.depth);
+      // Back-face culling + depth sort (allocation-free: sort [faceIndex, depth] pairs)
+      const faceOrder: [number, number][] = [];
+      for (let fi = 0; fi < fc; fi++) {
+        const idxs = mesh.faces[fi].indices;
+        const a = tv[idxs[0]], bv = tv[idxs[1]], cv = tv[idxs[2]];
+        // z-component of cross product of first two edges in view space
+        if (a && bv && cv) {
+          const e1x = bv.x - a.x, e1y = bv.y - a.y;
+          const e2x = cv.x - a.x, e2y = cv.y - a.y;
+          if (e1x * e2y - e1y * e2x <= 0) continue; // back-facing: skip
+        }
+        let depth = 0;
+        for (let k = 0; k < idxs.length; k++) depth += tv[idxs[k]]?.z ?? 0;
+        faceOrder.push([fi, depth / idxs.length]);
+      }
+      faceOrder.sort((a, b) => a[1] - b[1]);
 
-      sorted.forEach(({ indices, depth, color }) => {
-        const pts = indices.map(i => {
-          const p = tv[i];
-          return p ? project(p, cx, cy, fov, camDist) : [cx, cy] as [number,number];
-        });
-
-        const light = Math.max(0, Math.min(1, (depth/r + 1)/2));
+      // Draw visible faces back-to-front
+      for (let oi = 0; oi < faceOrder.length; oi++) {
+        const fi = faceOrder[oi][0];
+        const depth = faceOrder[oi][1];
+        const { indices, color } = mesh.faces[fi];
         const [r0, g0, b0] = color;
+        const light = Math.max(0, Math.min(1, (depth/r + 1) / 2));
+        const alpha = 0.22 + light * 0.55;
 
         ctx.beginPath();
-        ctx.moveTo(pts[0][0], pts[0][1]);
-        pts.slice(1).forEach(([px, py]) => ctx.lineTo(px, py));
+        const p0 = tv[indices[0]];
+        const [x0, y0] = p0 ? project(p0, cx, cy, fov, camDist) : [cx, cy];
+        ctx.moveTo(x0, y0);
+        for (let k = 1; k < indices.length; k++) {
+          const pk = tv[indices[k]];
+          const [xk, yk] = pk ? project(pk, cx, cy, fov, camDist) : [cx, cy];
+          ctx.lineTo(xk, yk);
+        }
         ctx.closePath();
 
-        // In edit mode, slightly highlight each face with purple
-        const editBias = state.editMode ? 0.08 : 0;
-        const alpha = 0.22 + light*0.55;
         ctx.fillStyle = state.editMode
           ? `rgba(${Math.round(r0*0.75+139*0.25)},${Math.round(g0*0.75+92*0.25)},${Math.round(b0*0.75+246*0.25)},${alpha})`
           : `rgba(${r0},${g0},${b0},${alpha})`;
         ctx.fill();
 
-        const edgeA = 0.35 + light*0.45 + editBias;
-        ctx.strokeStyle = `rgba(${Math.round(r0*0.4+98*0.6)},${Math.round(g0*0.2+91*0.8)},${Math.round(b0*0.3+246*0.7)},${edgeA})`;
-        ctx.lineWidth = state.editMode ? 1.5 : 2;
-        ctx.stroke();
-      });
+        if (!denseMesh) {
+          const edgeA = 0.35 + light * 0.45 + (state.editMode ? 0.08 : 0);
+          ctx.strokeStyle = `rgba(${Math.round(r0*0.4+98*0.6)},${Math.round(g0*0.2+91*0.8)},${Math.round(b0*0.3+246*0.7)},${edgeA})`;
+          ctx.lineWidth = state.editMode ? 1.5 : 2;
+          ctx.stroke();
+        }
+      }
 
       // Soft shadow
       const airFactor = state.thrown ? Math.max(0, 1 - Math.abs(state.panY)/(H*0.4)) : 1;
