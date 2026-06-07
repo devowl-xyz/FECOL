@@ -26,7 +26,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <div className="h-16 flex items-center px-5 gap-3"
             style={{ borderBottom: "1px solid #2a2a2e" }}>
             <div
-              className="w-9 h-9 rounded-md flex items-center justify-center overflow-hidden"
+              className="w-9 h-9 rounded-md flex items-center justify-center overflow-hidden logo-breathe"
               style={{
                 border: "1.5px solid rgba(0,0,0,0.7)",
                 boxShadow: "2px 2px 0 rgba(0,0,0,0.6)",
@@ -48,8 +48,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 <Link key={item.href} href={item.href}>
                   <div
                     className={cn(
-                      "flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition-all duration-150 relative overflow-hidden cursor-pointer",
-                      !isActive && "hover:bg-white/5"
+                      "flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition-all duration-200 relative overflow-hidden cursor-pointer",
+                      !isActive && "hover:bg-white/5 hover:translate-x-1",
+                      isActive && "nav-shimmer",
                     )}
                     style={isActive ? {
                       background: "linear-gradient(160deg, #FFE500 0%, #FFBB00 100%)",

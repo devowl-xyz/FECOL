@@ -633,12 +633,12 @@ function MeshToolbar({
         }}
       >
         {shapes.map(({ key, label }) => (
-          <button key={key} style={meshType === key ? btnActive : btnBase} onClick={() => onMeshChange(key)}>
+          <button key={key} className="toolbar-btn" style={meshType === key ? btnActive : btnBase} onClick={() => onMeshChange(key)}>
             {label}
           </button>
         ))}
         <div style={{ width: 1, height: 14, background: "rgba(0,0,0,0.18)", margin: "0 2px" }} />
-        <button style={btnBase} onClick={() => fileRef.current?.click()}>Import OBJ</button>
+        <button className="toolbar-btn" style={btnBase} onClick={() => fileRef.current?.click()}>Import OBJ</button>
         <input ref={fileRef} type="file" accept=".obj" style={{ display: "none" }} onChange={handleFile} />
       </div>
     </div>

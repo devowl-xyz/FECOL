@@ -34,7 +34,7 @@ export default function Dashboard() {
       <div className="h-full flex flex-col p-6 gap-6 max-w-7xl mx-auto">
 
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between ui-float-in">
           <div>
             <h2 className="text-3xl font-black uppercase tracking-tight">Control Center</h2>
             <p className="text-muted-foreground font-medium">Real-time gesture topology analysis.</p>
@@ -77,14 +77,14 @@ export default function Dashboard() {
 
         {/* Feed + Viewport */}
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6 min-h-[500px]">
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2 ui-float-in ui-delay-1">
             <h3 className="font-bold uppercase tracking-tight text-xs text-muted-foreground">Input Feed</h3>
             <div className="flex-1 relative rounded-xl overflow-hidden p-2" style={flatPanel}>
               <HandSkeleton frame={latestFrame} videoRef={videoRef} status={status} />
             </div>
           </div>
 
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2 ui-float-in ui-delay-2">
             <h3 className="font-bold uppercase tracking-tight text-xs text-muted-foreground">Output Space</h3>
             <div className="flex-1 relative rounded-xl overflow-hidden p-2" style={flatPanel}>
               <Scene3D frame={latestFrame} />
