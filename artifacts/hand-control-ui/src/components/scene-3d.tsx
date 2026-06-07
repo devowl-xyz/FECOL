@@ -101,6 +101,10 @@ export function Scene3D({ frame }: { frame: HandFrame | null }) {
   const throwCooldown   = useRef(0);
   const editPrevRef     = useRef<{ x:number; y:number }|null>(null);
   const rafRef          = useRef(0);
+  const timeRef         = useRef(0);
+
+  type Particle = { x: number; y: number; vy: number; vx: number; alpha: number; size: number; life: number };
+  const particlesRef = useRef<Particle[]>([]);
 
   // Reset mesh when type or custom source changes
   useEffect(() => {
@@ -131,9 +135,33 @@ export function Scene3D({ frame }: { frame: HandFrame | null }) {
       if (!canvas || !ctx) return;
       const dt = Math.min((now - lastTime) / 1000, 0.05);
       lastTime = now;
+      timeRef.current += dt;
+      const t = timeRef.current;
 
       const W = canvas.offsetWidth;
       const H = canvas.offsetHeight;
+
+      // Spawn ambient particles (cheap: ~6/sec, max 50 alive)
+      if (Math.random() < dt * 6 && particlesRef.current.length < 50) {
+        particlesRef.current.push({
+          x: Math.random() * W,
+          y: H * (0.4 + Math.random() * 0.6),
+          vx: (Math.random() - 0.5) * 18,
+          vy: -(Math.random() * 22 + 8),
+          alpha: Math.random() * 0.25 + 0.08,
+          size: Math.random() * 2.2 + 0.6,
+          life: 1,
+        });
+      }
+      // Age + move particles
+      const ps = particlesRef.current;
+      for (let i = ps.length - 1; i >= 0; i--) {
+        const p = ps[i];
+        p.x += p.vx * dt; p.y += p.vy * dt;
+        p.vy *= 1 - dt * 0.4; // slight drag
+        p.life -= dt * 0.55;
+        if (p.life <= 0 || p.y < -10) ps.splice(i, 1);
+      }
 
       // ── Two-hand / edit-mode detection ──────────────────────────────────
       const hands = frameRef.current?.hands ?? [];
@@ -294,8 +322,14 @@ export function Scene3D({ frame }: { frame: HandFrame | null }) {
               state.spinFast = false; state.targetScale = 1; state.targetPanX = 0; state.targetPanY = 0; state.targetShake = 0;
             }
           } else {
-            state.spinFast = false; state.targetRotY += dt*0.5; state.targetRotX += dt*0.2;
-            state.targetScale = 1; state.targetPanX = 0; state.targetPanY = 0; state.targetShake = 0;
+            // Idle: gentle float bob + scale breathe + slightly faster spin
+            state.spinFast = false;
+            state.targetRotY += dt * 0.8;
+            state.targetRotX += dt * 0.12;
+            state.targetScale  = 1 + Math.sin(t * 1.1) * 0.03;
+            state.targetPanX   = 0;
+            state.targetPanY   = Math.sin(t * 0.65) * 14;
+            state.targetShake  = 0;
           }
         }
       }
@@ -340,6 +374,15 @@ export function Scene3D({ frame }: { frame: HandFrame | null }) {
       for (let x = 0; x <= W; x += gs) { ctx.moveTo(x,0); ctx.lineTo(x,H); }
       for (let y = 0; y <= H; y += gs) { ctx.moveTo(0,y); ctx.lineTo(W,y); }
       ctx.stroke();
+
+      // Ambient floating particles
+      for (const p of particlesRef.current) {
+        const a = p.alpha * Math.min(1, p.life * 3); // fade in/out
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(167,139,250,${a.toFixed(3)})`;
+        ctx.fill();
+      }
 
       // Centre
       const jx = state.shake > 0.5 ? (Math.random()-0.5)*state.shake*2 : 0;
