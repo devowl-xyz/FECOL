@@ -351,27 +351,37 @@ export function Scene3D({ frame }: { frame: HandFrame | null }) {
       const camDist = r * 5;
       const fov     = r * 3.5;
 
-      // Transform vertices
+      // Transform + project all vertices upfront
+      // (vertices are shared across many faces — compute once, reuse everywhere)
       const mesh = meshRef.current;
       const fc = mesh.faces.length;
-      // Dense mesh: skip per-face strokes (too many edges = slow + noisy)
       const denseMesh = fc > 80;
+      const nv = mesh.verts.length;
 
-      const tv: Vec3[] = new Array(mesh.verts.length);
-      for (let vi = 0; vi < mesh.verts.length; vi++) {
+      const tv: Vec3[] = new Array(nv);
+      const pvx = new Float32Array(nv);
+      const pvy = new Float32Array(nv);
+      const cosRX = Math.cos(state.rotX), sinRX = Math.sin(state.rotX);
+      const cosRY = Math.cos(state.rotY), sinRY = Math.sin(state.rotY);
+      for (let vi = 0; vi < nv; vi++) {
         const v = mesh.verts[vi];
-        let p: Vec3 = { x: v.x*r, y: v.y*r, z: v.z*r };
-        p = rotateX(p, state.rotX);
-        p = rotateY(p, state.rotY);
-        tv[vi] = p;
+        // rotateX
+        const rx = v.x*r, ry0 = v.y*r, rz0 = v.z*r;
+        const ry = ry0*cosRX - rz0*sinRX, rz = ry0*sinRX + rz0*cosRX;
+        // rotateY
+        const fx = rx*cosRY + rz*sinRY, fy = ry, fz = -rx*sinRY + rz*cosRY;
+        tv[vi] = { x: fx, y: fy, z: fz };
+        const d = fz + camDist;
+        const s = fov / d;
+        pvx[vi] = cx + fx*s;
+        pvy[vi] = cy - fy*s;
       }
 
-      // Back-face culling + depth sort (allocation-free: sort [faceIndex, depth] pairs)
+      // Back-face culling + depth sort (index pairs, no object allocation)
       const faceOrder: [number, number][] = [];
       for (let fi = 0; fi < fc; fi++) {
         const idxs = mesh.faces[fi].indices;
         const a = tv[idxs[0]], bv = tv[idxs[1]], cv = tv[idxs[2]];
-        // z-component of cross product of first two edges in view space
         if (a && bv && cv) {
           const e1x = bv.x - a.x, e1y = bv.y - a.y;
           const e2x = cv.x - a.x, e2y = cv.y - a.y;
@@ -383,36 +393,72 @@ export function Scene3D({ frame }: { frame: HandFrame | null }) {
       }
       faceOrder.sort((a, b) => a[1] - b[1]);
 
-      // Draw visible faces back-to-front
-      for (let oi = 0; oi < faceOrder.length; oi++) {
-        const fi = faceOrder[oi][0];
-        const depth = faceOrder[oi][1];
-        const { indices, color } = mesh.faces[fi];
-        const [r0, g0, b0] = color;
-        const light = Math.max(0, Math.min(1, (depth/r + 1) / 2));
-        const alpha = 0.22 + light * 0.55;
+      if (!denseMesh) {
+        // Sparse mesh: per-face fill + stroke (best visual quality)
+        for (let oi = 0; oi < faceOrder.length; oi++) {
+          const fi = faceOrder[oi][0];
+          const depth = faceOrder[oi][1];
+          const { indices, color } = mesh.faces[fi];
+          const [r0, g0, b0] = color;
+          const light = Math.max(0, Math.min(1, (depth/r + 1) / 2));
+          const alpha = 0.22 + light * 0.55;
 
-        ctx.beginPath();
-        const p0 = tv[indices[0]];
-        const [x0, y0] = p0 ? project(p0, cx, cy, fov, camDist) : [cx, cy];
-        ctx.moveTo(x0, y0);
-        for (let k = 1; k < indices.length; k++) {
-          const pk = tv[indices[k]];
-          const [xk, yk] = pk ? project(pk, cx, cy, fov, camDist) : [cx, cy];
-          ctx.lineTo(xk, yk);
-        }
-        ctx.closePath();
+          ctx.beginPath();
+          ctx.moveTo(pvx[indices[0]], pvy[indices[0]]);
+          for (let k = 1; k < indices.length; k++) ctx.lineTo(pvx[indices[k]], pvy[indices[k]]);
+          ctx.closePath();
 
-        ctx.fillStyle = state.editMode
-          ? `rgba(${Math.round(r0*0.75+139*0.25)},${Math.round(g0*0.75+92*0.25)},${Math.round(b0*0.75+246*0.25)},${alpha})`
-          : `rgba(${r0},${g0},${b0},${alpha})`;
-        ctx.fill();
+          ctx.fillStyle = state.editMode
+            ? `rgba(${Math.round(r0*0.75+139*0.25)},${Math.round(g0*0.75+92*0.25)},${Math.round(b0*0.75+246*0.25)},${alpha})`
+            : `rgba(${r0},${g0},${b0},${alpha})`;
+          ctx.fill();
 
-        if (!denseMesh) {
           const edgeA = 0.35 + light * 0.45 + (state.editMode ? 0.08 : 0);
           ctx.strokeStyle = `rgba(${Math.round(r0*0.4+98*0.6)},${Math.round(g0*0.2+91*0.8)},${Math.round(b0*0.3+246*0.7)},${edgeA})`;
           ctx.lineWidth = state.editMode ? 1.5 : 2;
           ctx.stroke();
+        }
+      } else {
+        // Dense mesh: depth-bucket batching
+        // Groups faces into 16 depth slabs → one fill() per slab instead of per face
+        // Reduces the costliest canvas operation by ~10x
+        let minD = Infinity, maxD = -Infinity;
+        for (let oi = 0; oi < faceOrder.length; oi++) {
+          const d = faceOrder[oi][1];
+          if (d < minD) minD = d;
+          if (d > maxD) maxD = d;
+        }
+        const dRange = maxD - minD || 1;
+        const NUM_BUCKETS = 16;
+        const bucketOi: number[][] = Array.from({ length: NUM_BUCKETS }, () => []);
+        for (let oi = 0; oi < faceOrder.length; oi++) {
+          const b = Math.min(NUM_BUCKETS - 1, Math.floor((faceOrder[oi][1] - minD) / dRange * NUM_BUCKETS));
+          bucketOi[b].push(oi);
+        }
+
+        for (let b = 0; b < NUM_BUCKETS; b++) {
+          const group = bucketOi[b];
+          if (group.length === 0) continue;
+
+          let sumD = 0, sumR = 0, sumG = 0, sumB = 0;
+          ctx.beginPath();
+          for (const oi of group) {
+            const [fi, depth] = faceOrder[oi];
+            sumD += depth;
+            const { indices, color } = mesh.faces[fi];
+            sumR += color[0]; sumG += color[1]; sumB += color[2];
+            ctx.moveTo(pvx[indices[0]], pvy[indices[0]]);
+            for (let k = 1; k < indices.length; k++) ctx.lineTo(pvx[indices[k]], pvy[indices[k]]);
+            ctx.closePath();
+          }
+          const n = group.length;
+          const light = Math.max(0, Math.min(1, (sumD / n / r + 1) / 2));
+          const alpha = 0.22 + light * 0.55;
+          const cr = Math.round(sumR / n), cg = Math.round(sumG / n), cb = Math.round(sumB / n);
+          ctx.fillStyle = state.editMode
+            ? `rgba(${Math.round(cr*0.75+139*0.25)},${Math.round(cg*0.75+92*0.25)},${Math.round(cb*0.75+246*0.25)},${alpha})`
+            : `rgba(${cr},${cg},${cb},${alpha})`;
+          ctx.fill();
         }
       }
 

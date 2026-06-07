@@ -147,7 +147,7 @@ export function parseOBJ(text: string): Mesh | null {
   if (rawVerts.length === 0 || faces.length === 0) return null;
 
   // Cap face count so the renderer stays fast (back-face culling will halve it at runtime)
-  const MAX_FACES = 600;
+  const MAX_FACES = 250;
   const cappedFaces = faces.length > MAX_FACES
     ? faces.filter((_, i) => i % Math.ceil(faces.length / MAX_FACES) === 0)
         .map((f, i) => ({ ...f, color: col(i) }))
