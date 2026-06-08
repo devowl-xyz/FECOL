@@ -8,6 +8,7 @@ import Dashboard from "@/pages/dashboard";
 import Gestures from "@/pages/gestures";
 import Sessions from "@/pages/sessions";
 import Settings from "@/pages/settings";
+import Draw from "@/pages/draw";
 
 const queryClient = new QueryClient();
 
@@ -15,6 +16,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
+      <Route path="/draw" component={Draw} />
       <Route path="/gestures" component={Gestures} />
       <Route path="/sessions" component={Sessions} />
       <Route path="/settings" component={Settings} />

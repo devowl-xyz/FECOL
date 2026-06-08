@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { Hand, Settings, Activity, FolderOpen } from "lucide-react";
+import { Hand, Settings, Activity, FolderOpen, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useHealthCheck } from "@workspace/api-client-react";
 
@@ -9,6 +9,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   const navItems = [
     { href: "/", label: "Control", icon: Hand },
+    { href: "/draw", label: "Draw", icon: Pencil },
     { href: "/gestures", label: "Gestures", icon: FolderOpen },
     { href: "/sessions", label: "Sessions", icon: Activity },
     { href: "/settings", label: "Settings", icon: Settings },
