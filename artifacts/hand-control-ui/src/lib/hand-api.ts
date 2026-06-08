@@ -22,6 +22,17 @@ export type HandFrame = {
   height: number;
 };
 
+/** A single YOLO + ByteTrack detection from the Python backend. */
+export type DetectedObject = {
+  class_name: string;
+  confidence: number;
+  tracker_id: number;
+  /** Pixel-space bounding box [x1, y1, x2, y2] */
+  bbox: [number, number, number, number];
+  /** Normalised 0-1 bounding box [x1, y1, x2, y2] */
+  normalized_bbox: [number, number, number, number];
+};
+
 export type TrackerStatus =
   | "loading"
   | "ready"
@@ -133,6 +144,7 @@ export function useHandTracker() {
   const [latestFrame, setLatestFrame] = useState<HandFrame | null>(null);
   const [fps, setFps] = useState(0);
   const [status, setStatus] = useState<TrackerStatus>("loading");
+  const [detections, setDetections] = useState<DetectedObject[]>([]);
 
   const landmarkerRef = useRef<HandLandmarker | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -142,14 +154,37 @@ export function useHandTracker() {
   const lastVideoTimeRef = useRef(-1);
   const framesRef = useRef(0);
   const lastFpsRef = useRef(Date.now());
+  const detectFrameCountRef = useRef(0);
 
-  // WebSocket to Python backend (for TDA Mapper accumulation)
+  // WebSocket to Python backend — landmarks for TDA + frames for YOLO detection
   const connectWs = useCallback(() => {
     try {
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
       const ws = new WebSocket(`${protocol}//${window.location.host}/hand-api/ws`);
       wsRef.current = ws;
       ws.onopen = () => setIsConnected(true);
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data) as { type: string; data?: unknown };
+          // Detections can arrive from two paths:
+          //  "detections" — response to our detect_frame command
+          //  "frame"      — broadcast when server camera has YOLO running
+          if (
+            (msg.type === "detections" || msg.type === "frame") &&
+            Array.isArray(
+              msg.type === "detections"
+                ? (msg.data as DetectedObject[])
+                : (msg.data as { detections?: DetectedObject[] })?.detections
+            )
+          ) {
+            const dets: DetectedObject[] =
+              msg.type === "detections"
+                ? (msg.data as DetectedObject[])
+                : ((msg.data as { detections: DetectedObject[] }).detections ?? []);
+            if (dets.length >= 0) setDetections(dets);
+          }
+        } catch { /* ignore parse errors */ }
+      };
       ws.onclose = () => {
         setIsConnected(false);
         setTimeout(connectWs, 4000);
@@ -253,6 +288,12 @@ export function useHandTracker() {
   }, [connectWs]);
 
   function startDetectionLoop(landmarker: HandLandmarker, video: HTMLVideoElement) {
+    // Offscreen canvas reused for encoding frames to JPEG for Python YOLO
+    const offscreen = document.createElement("canvas");
+    offscreen.width = 320;
+    offscreen.height = 240;
+    const octx = offscreen.getContext("2d");
+
     function detect() {
       rafRef.current = requestAnimationFrame(detect);
       if (video.readyState < 2) return;
@@ -277,11 +318,23 @@ export function useHandTracker() {
       if (wsRef.current?.readyState === WebSocket.OPEN && frame.hands.length > 0) {
         wsRef.current.send(JSON.stringify({ cmd: "landmarks", data: frame }));
       }
+
+      // Every ~60 frames (~2 s at 30 fps) send a JPEG to Python for YOLO detection
+      detectFrameCountRef.current++;
+      if (
+        detectFrameCountRef.current % 60 === 0 &&
+        wsRef.current?.readyState === WebSocket.OPEN &&
+        octx
+      ) {
+        octx.drawImage(video, 0, 0, 320, 240);
+        const jpeg = offscreen.toDataURL("image/jpeg", 0.5).split(",")[1];
+        wsRef.current.send(JSON.stringify({ cmd: "detect_frame", jpeg_b64: jpeg }));
+      }
     }
     detect();
   }
 
-  return { isConnected, latestFrame, fps, status, videoRef };
+  return { isConnected, latestFrame, fps, status, videoRef, detections };
 }
 
 export async function calibrateHandApi(cameraIndex: number, enabled: boolean) {

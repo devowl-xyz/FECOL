@@ -1,6 +1,7 @@
 """
 Hand tracking module using MediaPipe.
 Captures webcam frames and detects 21 hand landmarks per hand.
+Also runs YOLO object detection via ObjectDetector (every Nth frame).
 """
 import numpy as np
 import threading
@@ -19,6 +20,14 @@ except Exception as e:
     logger.warning("MediaPipe not available: %s — demo mode only", e)
     mp_hands = None
     _MEDIAPIPE_AVAILABLE = False
+
+try:
+    from object_detector import ObjectDetector
+    _DETECTOR_AVAILABLE = True
+except Exception as e:
+    logger.warning("ObjectDetector not available: %s — detection disabled", e)
+    ObjectDetector = None  # type: ignore
+    _DETECTOR_AVAILABLE = False
 
 
 @dataclass
@@ -53,6 +62,7 @@ class TrackingFrame:
     width: int
     height: int
     jpeg_b64: Optional[str] = None
+    detections: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -61,6 +71,7 @@ class TrackingFrame:
             "width": self.width,
             "height": self.height,
             "jpeg_b64": self.jpeg_b64,
+            "detections": self.detections,
         }
 
 
@@ -124,6 +135,11 @@ class HandTracker:
         # History buffer for TDA Mapper
         self._landmark_history: list[list[float]] = []
         self._history_limit = 500
+
+        # Detector is only used in real-camera mode (_capture_loop).
+        # In demo mode (_demo_loop) it is never called, so we skip creation
+        # here; main.py holds the singleton used for browser-sent frames.
+        self._detector: Optional[object] = None
 
     def add_callback(self, cb):
         self._callbacks.append(cb)
@@ -221,10 +237,20 @@ class HandTracker:
                             if len(self._landmark_history) > self._history_limit:
                                 self._landmark_history.pop(0)
 
+                # ── Object detection (YOLO + ByteTrack, throttled) ───────────
+                detections: list[dict] = []
+                frame_for_jpeg = frame
+                if self._detector is not None:
+                    detections, annotated = self._detector.process_frame(frame)
+                    if self.send_frames:
+                        if hand_data_list:
+                            annotated = self._detector.annotate_hands(annotated, hand_data_list)
+                        frame_for_jpeg = annotated
+
                 jpeg_b64 = None
                 if self.send_frames:
                     import base64
-                    _, buf = _cv2.imencode(".jpg", frame, [_cv2.IMWRITE_JPEG_QUALITY, 60])
+                    _, buf = _cv2.imencode(".jpg", frame_for_jpeg, [_cv2.IMWRITE_JPEG_QUALITY, 60])
                     jpeg_b64 = base64.b64encode(buf.tobytes()).decode()
 
                 tracking = TrackingFrame(
@@ -233,6 +259,7 @@ class HandTracker:
                     width=w,
                     height=h,
                     jpeg_b64=jpeg_b64,
+                    detections=detections,
                 )
 
                 with self._lock:

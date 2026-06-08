@@ -24,7 +24,7 @@ const CAMERA_STATUS: Record<string, { label: string; color: string; pulse: boole
 };
 
 export default function Dashboard() {
-  const { latestFrame, fps, status, videoRef } = useHandTracker();
+  const { latestFrame, fps, status, videoRef, detections } = useHandTracker();
   const currentGesture = latestFrame?.hands[0]?.gesture || "none";
   const camStatus = CAMERA_STATUS[status] ?? CAMERA_STATUS.loading;
   const isTracking = status === "ready" && (latestFrame?.hands.length ?? 0) > 0;
@@ -75,12 +75,41 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* Detected Objects panel */}
+        {detections.length > 0 && (
+          <div className="flex flex-col gap-2 ui-float-in ui-delay-2">
+            <h3 className="font-bold uppercase tracking-tight text-xs text-muted-foreground">
+              Detected Objects
+            </h3>
+            <div className="flex flex-wrap gap-2">
+              {detections.map((d) => (
+                <div
+                  key={d.tracker_id}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded gesture-pop"
+                  style={statCard}
+                >
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                    #{d.tracker_id}
+                  </span>
+                  <span className="font-bold text-xs uppercase">{d.class_name}</span>
+                  <span
+                    className="text-[9px] font-bold"
+                    style={{ color: "#22c55e" }}
+                  >
+                    {(d.confidence * 100).toFixed(0)}%
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Feed + Viewport */}
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6 min-h-[500px]">
           <div className="flex flex-col gap-2 ui-float-in ui-delay-1">
             <h3 className="font-bold uppercase tracking-tight text-xs text-muted-foreground">Input Feed</h3>
             <div className="flex-1 relative rounded-xl overflow-hidden p-2" style={flatPanel}>
-              <HandSkeleton frame={latestFrame} videoRef={videoRef} status={status} />
+              <HandSkeleton frame={latestFrame} videoRef={videoRef} status={status} detections={detections} />
             </div>
           </div>
 

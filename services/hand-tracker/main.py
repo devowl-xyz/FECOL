@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -20,6 +21,7 @@ from pydantic import BaseModel
 
 from hand_tracker import HandTracker, TrackingFrame
 from tda_mapper_analysis import build_mapper_graph
+from object_detector import ObjectDetector
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,6 +37,14 @@ tracker = HandTracker(
     target_fps=30,
     send_frames=False,  # disabled by default to reduce bandwidth
 )
+
+# ── Object detector (shared; used for browser-sent frames) ────────────────────
+# The tracker's own ObjectDetector handles server-camera frames.
+# This standalone detector handles frames uploaded by the browser via WebSocket.
+_browser_detector = ObjectDetector()
+
+# Thread pool for off-event-loop YOLO inference
+_executor = ThreadPoolExecutor(max_workers=1)
 
 # Active WebSocket connections
 _ws_clients: set[WebSocket] = set()
@@ -147,6 +157,15 @@ async def websocket_endpoint(ws: WebSocket):
                 elif data.get("cmd") == "toggle_frames":
                     tracker.send_frames = not tracker.send_frames
                     await ws.send_text(json.dumps({"type": "frames_toggled", "data": {"send_frames": tracker.send_frames}}))
+                elif data.get("cmd") == "detect_frame":
+                    jpeg_b64 = data.get("jpeg_b64", "")
+                    if jpeg_b64 and _browser_detector.available:
+                        loop = asyncio.get_event_loop()
+                        dets = await loop.run_in_executor(
+                            _executor,
+                            lambda j=jpeg_b64: _browser_detector.detect_b64(j),
+                        )
+                        await ws.send_text(json.dumps({"type": "detections", "data": dets}))
             except asyncio.TimeoutError:
                 # Send keepalive
                 await ws.send_text(json.dumps({"type": "ping"}))

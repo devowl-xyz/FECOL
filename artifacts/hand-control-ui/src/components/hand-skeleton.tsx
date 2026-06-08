@@ -1,6 +1,10 @@
 import { useRef, useEffect, RefObject } from "react";
-import { HandFrame, TrackerStatus } from "@/lib/hand-api";
+import { HandFrame, TrackerStatus, DetectedObject } from "@/lib/hand-api";
 import { ExternalLink } from "lucide-react";
+
+const DETECTION_PALETTE = [
+  "#FFE500", "#625BF6", "#22c55e", "#f97316", "#ef4444", "#06b6d4", "#ec4899",
+];
 
 const HAND_CONNECTIONS = [
   [0, 1], [1, 2], [2, 3], [3, 4],
@@ -14,14 +18,17 @@ interface Props {
   frame: HandFrame | null;
   videoRef: RefObject<HTMLVideoElement | null>;
   status: TrackerStatus;
+  detections?: DetectedObject[];
 }
 
-export function HandSkeleton({ frame, videoRef, status }: Props) {
+export function HandSkeleton({ frame, videoRef, status, detections }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>(0);
-  // Store latest frame in a ref so the RAF loop can read it without restarting
+  // Store latest frame + detections in refs so the RAF loop reads without restarting
   const frameRef = useRef<HandFrame | null>(null);
+  const detectionsRef = useRef<DetectedObject[]>([]);
   frameRef.current = frame;
+  detectionsRef.current = detections ?? [];
 
   // Start/stop the RAF loop only when status changes, not on every frame
   useEffect(() => {
@@ -98,6 +105,40 @@ export function HandSkeleton({ frame, videoRef, status }: Props) {
           ctx!.fillStyle = color;
           ctx!.fillText(label, lx, ly);
         }
+      });
+
+      // ── YOLO detection boxes (from Python ByteTrack) ────────────────────
+      const currentDetections = detectionsRef.current;
+      currentDetections.forEach((det) => {
+        const boxColor = DETECTION_PALETTE[det.tracker_id % DETECTION_PALETTE.length];
+        const [nx1, ny1, nx2, ny2] = det.normalized_bbox;
+        // Mirror X to match the flipped video (same transform as landmarks)
+        const bx = (1 - nx2) * W;
+        const by = ny1 * H;
+        const bw = (nx2 - nx1) * W;
+        const bh = (ny2 - ny1) * H;
+
+        // Box
+        ctx!.strokeStyle = boxColor;
+        ctx!.lineWidth = 2.5;
+        ctx!.shadowColor = boxColor;
+        ctx!.shadowBlur = 6;
+        ctx!.strokeRect(bx, by, bw, bh);
+        ctx!.shadowBlur = 0;
+
+        // Label pill
+        const labelText = `#${det.tracker_id} ${det.class_name} ${(det.confidence * 100).toFixed(0)}%`;
+        ctx!.font = "bold 11px 'Montserrat', sans-serif";
+        const lw = ctx!.measureText(labelText).width;
+        const lh = 18;
+        const lx = bx;
+        const ly = by > lh + 2 ? by - lh - 2 : by + 2;
+        ctx!.fillStyle = boxColor;
+        ctx!.beginPath();
+        (ctx! as CanvasRenderingContext2D).roundRect(lx, ly, lw + 10, lh, 3);
+        ctx!.fill();
+        ctx!.fillStyle = "#000";
+        ctx!.fillText(labelText, lx + 5, ly + lh - 4);
       });
     }
 

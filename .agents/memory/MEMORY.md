@@ -1,1 +1,2 @@
 - [WebGL in Replit preview](webgl-replit.md) — Replit preview sandbox has no GPU/WebGL; use Canvas 2D for 3D rendering.
+- [Supervision + PyTorch CPU install](supervision-install.md) — must install CPU-only torch first, then CPU torchvision, then ultralytics; also uninstall opencv-python and keep headless.

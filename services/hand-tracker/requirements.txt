@@ -7,3 +7,5 @@ tdamapper==1.0.0
 numpy==1.26.4
 scikit-learn==1.5.2
 python-multipart==0.0.12
+supervision>=0.25.0
+ultralytics>=8.3.0
