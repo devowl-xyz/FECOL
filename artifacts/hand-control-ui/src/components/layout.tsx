@@ -1,19 +1,18 @@
 import { Link, useLocation } from "wouter";
-import { Hand, Settings, Activity, FolderOpen, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useHealthCheck } from "@workspace/api-client-react";
+
+const navItems = [
+  { href: "/",         label: "Control",  img: "/nav-control.png"  },
+  { href: "/draw",     label: "Draw",     img: "/nav-draw.png"     },
+  { href: "/gestures", label: "Gestures", img: "/nav-gestures.png" },
+  { href: "/sessions", label: "Sessions", img: "/nav-sessions.png" },
+  { href: "/settings", label: "Settings", img: "/nav-settings.png" },
+];
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { data: health } = useHealthCheck();
-
-  const navItems = [
-    { href: "/", label: "Control", icon: Hand },
-    { href: "/draw", label: "Draw", icon: Pencil },
-    { href: "/gestures", label: "Gestures", icon: FolderOpen },
-    { href: "/sessions", label: "Sessions", icon: Activity },
-    { href: "/settings", label: "Settings", icon: Settings },
-  ];
 
   return (
     <div className="flex h-screen bg-background overflow-hidden text-foreground selection:bg-primary selection:text-primary-foreground">
@@ -44,7 +43,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <nav className="p-3 space-y-1.5">
             {navItems.map((item) => {
               const isActive = location === item.href;
-              const Icon = item.icon;
               return (
                 <Link key={item.href} href={item.href}>
                   <div
@@ -64,9 +62,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     }}
                   >
                     {isActive && (
-                      <div className="absolute inset-0 rounded-md pointer-events-none" style={{ background: "linear-gradient(160deg, rgba(255,255,255,0.25) 0%, transparent 50%)" }} />
+                      <div className="absolute inset-0 rounded-md pointer-events-none"
+                        style={{ background: "linear-gradient(160deg, rgba(255,255,255,0.25) 0%, transparent 50%)" }} />
                     )}
-                    <Icon className="w-4 h-4 relative z-10" strokeWidth={isActive ? 2.5 : 2} />
+                    <img
+                      src={item.img}
+                      alt={item.label}
+                      className="w-4 h-4 relative z-10 object-contain"
+                      style={{ filter: isActive ? "brightness(0)" : "brightness(0) invert(0.6)" }}
+                    />
                     <span className="relative z-10">{item.label}</span>
                   </div>
                 </Link>
