@@ -14,6 +14,11 @@ const HAND_CONNECTIONS = [
   [13, 17], [0, 17], [17, 18], [18, 19], [19, 20],
 ];
 
+const TRAIL_DURATION = 3000; // ms before a point fully fades
+const TRAIL_MAX_WIDTH = 14;   // px at the newest point
+
+interface TrailPoint { x: number; y: number; t: number; color: string }
+
 interface Props {
   frame: HandFrame | null;
   videoRef: RefObject<HTMLVideoElement | null>;
@@ -24,13 +29,13 @@ interface Props {
 export function HandSkeleton({ frame, videoRef, status, detections }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>(0);
-  // Store latest frame + detections in refs so the RAF loop reads without restarting
   const frameRef = useRef<HandFrame | null>(null);
   const detectionsRef = useRef<DetectedObject[]>([]);
+  const trailRef = useRef<Map<string, TrailPoint[]>>(new Map());
+
   frameRef.current = frame;
   detectionsRef.current = detections ?? [];
 
-  // Start/stop the RAF loop only when status changes, not on every frame
   useEffect(() => {
     if (status === "iframe" || status === "no-camera" || status === "error") return;
 
@@ -50,7 +55,7 @@ export function HandSkeleton({ frame, videoRef, status, detections }: Props) {
       }
       ctx!.clearRect(0, 0, W, H);
 
-      // Draw mirrored webcam feed
+      // ── Mirrored webcam feed ───────────────────────────────────────────────
       const video = videoRef?.current;
       if (video && video.readyState >= 2) {
         ctx!.save();
@@ -60,13 +65,66 @@ export function HandSkeleton({ frame, videoRef, status, detections }: Props) {
         ctx!.restore();
       }
 
+      const now = performance.now();
       const currentFrame = frameRef.current;
+
+      // ── Collect new trail points ───────────────────────────────────────────
+      if (currentFrame) {
+        currentFrame.hands.forEach((hand) => {
+          const tip = hand.landmarks[8]; // index fingertip
+          if (!tip) return;
+          const color = hand.handedness === "Left" ? "#FFE500" : "#625BF6";
+          const key = hand.handedness;
+          const trail = trailRef.current.get(key) ?? [];
+          trail.push({ x: (1 - tip.x) * W, y: tip.y * H, t: now, color });
+          // Prune points older than TRAIL_DURATION
+          const cutoff = now - TRAIL_DURATION;
+          let keep = 0;
+          while (keep < trail.length && trail[keep].t < cutoff) keep++;
+          if (keep > 0) trail.splice(0, keep);
+          trailRef.current.set(key, trail);
+        });
+      }
+
+      // ── Draw trails (before skeleton so skeleton sits on top) ─────────────
+      ctx!.save();
+      ctx!.lineCap = "round";
+      ctx!.lineJoin = "round";
+
+      trailRef.current.forEach((trail) => {
+        if (trail.length < 2) return;
+        for (let i = 1; i < trail.length; i++) {
+          const cur = trail[i];
+          const prev = trail[i - 1];
+          // frac: 0 = oldest, 1 = newest
+          const frac = i / (trail.length - 1);
+          const age = now - cur.t;
+          const alpha = Math.max(0, 1 - age / TRAIL_DURATION) * 0.85;
+
+          ctx!.globalAlpha = alpha;
+          ctx!.lineWidth = TRAIL_MAX_WIDTH * frac;
+          ctx!.strokeStyle = cur.color;
+
+          // Soft glow pass
+          ctx!.shadowColor = cur.color;
+          ctx!.shadowBlur = 12 * frac;
+          ctx!.beginPath();
+          ctx!.moveTo(prev.x, prev.y);
+          ctx!.lineTo(cur.x, cur.y);
+          ctx!.stroke();
+        }
+      });
+
+      ctx!.globalAlpha = 1;
+      ctx!.shadowBlur = 0;
+      ctx!.restore();
+
+      // ── Hand skeleton ──────────────────────────────────────────────────────
       if (!currentFrame) return;
 
       currentFrame.hands.forEach((hand) => {
         const color = hand.handedness === "Left" ? "#FFE500" : "#625BF6";
 
-        // Connections
         ctx!.lineWidth = 3;
         ctx!.strokeStyle = color;
         HAND_CONNECTIONS.forEach(([a, b]) => {
@@ -79,7 +137,6 @@ export function HandSkeleton({ frame, videoRef, status, detections }: Props) {
           ctx!.stroke();
         });
 
-        // Landmark dots
         hand.landmarks.forEach((lm, i) => {
           ctx!.beginPath();
           ctx!.arc((1 - lm.x) * W, lm.y * H, i === 8 ? 7 : 5, 0, Math.PI * 2);
@@ -90,7 +147,6 @@ export function HandSkeleton({ frame, videoRef, status, detections }: Props) {
           ctx!.stroke();
         });
 
-        // Gesture label near wrist
         const wrist = hand.landmarks[0];
         if (wrist) {
           const lx = (1 - wrist.x) * W;
@@ -107,18 +163,16 @@ export function HandSkeleton({ frame, videoRef, status, detections }: Props) {
         }
       });
 
-      // ── YOLO detection boxes (from Python ByteTrack) ────────────────────
+      // ── YOLO detection boxes ───────────────────────────────────────────────
       const currentDetections = detectionsRef.current;
       currentDetections.forEach((det) => {
         const boxColor = DETECTION_PALETTE[det.tracker_id % DETECTION_PALETTE.length];
         const [nx1, ny1, nx2, ny2] = det.normalized_bbox;
-        // Mirror X to match the flipped video (same transform as landmarks)
         const bx = (1 - nx2) * W;
         const by = ny1 * H;
         const bw = (nx2 - nx1) * W;
         const bh = (ny2 - ny1) * H;
 
-        // Box
         ctx!.strokeStyle = boxColor;
         ctx!.lineWidth = 2.5;
         ctx!.shadowColor = boxColor;
@@ -126,7 +180,6 @@ export function HandSkeleton({ frame, videoRef, status, detections }: Props) {
         ctx!.strokeRect(bx, by, bw, bh);
         ctx!.shadowBlur = 0;
 
-        // Label pill
         const labelText = `#${det.tracker_id} ${det.class_name} ${(det.confidence * 100).toFixed(0)}%`;
         ctx!.font = "bold 11px 'Montserrat', sans-serif";
         const lw = ctx!.measureText(labelText).width;
@@ -144,7 +197,6 @@ export function HandSkeleton({ frame, videoRef, status, detections }: Props) {
 
     render();
     return () => cancelAnimationFrame(rafRef.current);
-    // Only restart the loop when status changes — frame updates via frameRef
   }, [status, videoRef]);
 
   // ── Status overlays ────────────────────────────────────────────────────────
