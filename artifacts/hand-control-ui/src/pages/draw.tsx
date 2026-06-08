@@ -12,11 +12,18 @@ const HAND_CONNECTIONS = [
 ];
 
 const PALETTE = [
-  "#FFE500", "#625BF6", "#22c55e", "#ef4444",
-  "#f97316", "#06b6d4", "#ec4899", "#ffffff",
+  "#000000", "#625BF6", "#ef4444",
+  "#f97316", "#FFE500", "#22c55e",
+  "#06b6d4", "#ec4899",
 ];
 
 const BRUSH_SIZES = [3, 6, 12, 20];
+
+// PiP dimensions
+const PIP_W = 190;
+const PIP_H = 140;
+const PIP_R = 10;   // corner radius
+const PIP_M = 14;   // margin from edge
 
 type Tool = "pen" | "eraser";
 
@@ -29,7 +36,7 @@ export default function Draw() {
   const frameRef      = useRef(latestFrame);
   frameRef.current    = latestFrame;
 
-  const [color,     setColor]     = useState("#FFE500");
+  const [color,     setColor]     = useState("#000000");
   const [brushSize, setBrushSize] = useState(6);
   const [tool,      setTool]      = useState<Tool>("pen");
 
@@ -42,7 +49,6 @@ export default function Draw() {
 
   const lastPtRef = useRef<{ x: number; y: number } | null>(null);
 
-  // Create persistent ink canvas once
   useEffect(() => {
     const ink = document.createElement("canvas");
     ink.width  = 1280;
@@ -51,9 +57,8 @@ export default function Draw() {
     return () => { inkCanvasRef.current = null; };
   }, []);
 
-  // RAF draw loop
   useEffect(() => {
-    if (status === "iframe" || status === "no-camera" || status === "error") return;
+    if (status === "iframe") return;
 
     const canvas = mainCanvasRef.current;
     if (!canvas) return;
@@ -68,51 +73,35 @@ export default function Draw() {
       if (canvas!.width !== W || canvas!.height !== H) {
         canvas!.width  = W;
         canvas!.height = H;
-
-        // Resize ink canvas, preserving existing strokes
         const ink = inkCanvasRef.current;
         if (ink && (ink.width !== W || ink.height !== H)) {
-          const tmp    = document.createElement("canvas");
-          tmp.width    = W;
-          tmp.height   = H;
-          const tmpCtx = tmp.getContext("2d");
-          tmpCtx?.drawImage(ink, 0, 0, W, H);
-          ink.width    = W;
-          ink.height   = H;
+          const tmp = document.createElement("canvas");
+          tmp.width = W; tmp.height = H;
+          tmp.getContext("2d")?.drawImage(ink, 0, 0, W, H);
+          ink.width = W; ink.height = H;
           ink.getContext("2d")?.drawImage(tmp, 0, 0);
         }
       }
 
-      ctx!.clearRect(0, 0, W, H);
+      // ── 1. White canvas background ─────────────────────────────────────────
+      ctx!.fillStyle = "#ffffff";
+      ctx!.fillRect(0, 0, W, H);
 
-      // 1 — mirrored camera feed
-      const video = videoRef?.current;
-      if (video && video.readyState >= 2) {
-        ctx!.save();
-        ctx!.translate(W, 0);
-        ctx!.scale(-1, 1);
-        ctx!.drawImage(video, 0, 0, W, H);
-        ctx!.restore();
-      } else {
-        ctx!.fillStyle = "#0a0a0a";
-        ctx!.fillRect(0, 0, W, H);
-      }
-
-      // 2 — composite persistent ink strokes
+      // ── 2. Ink strokes ─────────────────────────────────────────────────────
       const ink = inkCanvasRef.current;
       if (ink) ctx!.drawImage(ink, 0, 0);
 
-      // 3 — hand skeleton + drawing logic
+      // ── 3. Hand drawing + skeleton ─────────────────────────────────────────
       const frame = frameRef.current;
       if (frame && frame.hands.length > 0) {
-        const hand     = frame.hands[0];
-        const tip      = hand.landmarks[8];
-        const isPoint  = hand.gesture === "point";
-        const tx       = (1 - tip.x) * W;
-        const ty       = tip.y * H;
-        const hcolor   = hand.handedness === "Left" ? "#FFE500" : "#625BF6";
+        const hand    = frame.hands[0];
+        const tip     = hand.landmarks[8];
+        const isPoint = hand.gesture === "point";
+        const tx      = (1 - tip.x) * W;
+        const ty      = tip.y * H;
+        const hcolor  = hand.handedness === "Left" ? "#e5a000" : "#4f46e5";
 
-        // Stroke onto ink canvas
+        // Write stroke onto ink canvas
         if (isPoint && ink) {
           const inkCtx = ink.getContext("2d");
           if (inkCtx) {
@@ -140,9 +129,10 @@ export default function Draw() {
           lastPtRef.current = null;
         }
 
-        // Skeleton (faint, drawn over ink so hand is always visible)
-        ctx!.lineWidth   = 2;
-        ctx!.strokeStyle = `${hcolor}66`;
+        // Skeleton — dark lines with slight opacity so they don't dominate
+        ctx!.lineWidth   = 2.5;
+        ctx!.strokeStyle = `${hcolor}cc`;
+        ctx!.lineCap     = "round";
         HAND_CONNECTIONS.forEach(([a, b]) => {
           const s = hand.landmarks[a];
           const e = hand.landmarks[b];
@@ -153,32 +143,42 @@ export default function Draw() {
           ctx!.stroke();
         });
 
-        // Landmark dots (small, unobtrusive)
+        // Landmark dots
         hand.landmarks.forEach((lm, i) => {
-          if (i !== 8 && i % 4 !== 0) return; // only key joints + fingertip
+          const r   = i === 8 ? 6 : 4;
+          const x   = (1 - lm.x) * W;
+          const y   = lm.y * H;
+          // Fill
           ctx!.beginPath();
-          ctx!.arc((1 - lm.x) * W, lm.y * H, i === 8 ? 5 : 3, 0, Math.PI * 2);
-          ctx!.fillStyle = i === 8 ? "#ffffff" : `${hcolor}99`;
+          ctx!.arc(x, y, r, 0, Math.PI * 2);
+          ctx!.fillStyle = i === 8 ? hcolor : "#ffffff";
           ctx!.fill();
+          // Dark outline for visibility on white
+          ctx!.strokeStyle = i === 8 ? "rgba(0,0,0,0.5)" : hcolor;
+          ctx!.lineWidth   = i === 8 ? 1.5 : 1.5;
+          ctx!.stroke();
         });
 
-        // Cursor ring at index tip
-        const cursorColor = toolRef.current === "eraser" ? "#ffffff" : colorRef.current;
-        const cursorR     = toolRef.current === "eraser"
+        // Cursor ring at fingertip
+        const isEraser    = toolRef.current === "eraser";
+        const cursorColor = isEraser ? "rgba(0,0,0,0.55)" : colorRef.current;
+        const cursorR     = isEraser
           ? brushRef.current * 2
           : Math.max(brushRef.current * 0.7, 7);
 
         ctx!.save();
-        ctx!.globalAlpha  = isPoint ? 1 : 0.45;
-        ctx!.shadowColor  = cursorColor;
-        ctx!.shadowBlur   = isPoint ? 18 : 6;
+        ctx!.globalAlpha = isPoint ? 1 : 0.5;
+        if (!isEraser) {
+          ctx!.shadowColor = cursorColor;
+          ctx!.shadowBlur  = isPoint ? 14 : 4;
+        }
         ctx!.beginPath();
         ctx!.arc(tx, ty, cursorR, 0, Math.PI * 2);
         ctx!.strokeStyle = cursorColor;
         ctx!.lineWidth   = 2.5;
         ctx!.stroke();
         if (isPoint) {
-          ctx!.globalAlpha = 0.18;
+          ctx!.globalAlpha = 0.12;
           ctx!.fillStyle   = cursorColor;
           ctx!.fill();
         }
@@ -186,6 +186,46 @@ export default function Draw() {
 
       } else {
         lastPtRef.current = null;
+      }
+
+      // ── 4. PiP camera (bottom-right) ───────────────────────────────────────
+      const video = videoRef?.current;
+      if (video && video.readyState >= 2) {
+        const px = W - PIP_W - PIP_M;
+        const py = H - PIP_H - PIP_M;
+
+        ctx!.save();
+
+        // Drop shadow behind pip
+        ctx!.shadowColor  = "rgba(0,0,0,0.35)";
+        ctx!.shadowBlur   = 12;
+        ctx!.shadowOffsetY = 3;
+
+        // Clip to rounded rect
+        ctx!.beginPath();
+        (ctx! as CanvasRenderingContext2D).roundRect(px, py, PIP_W, PIP_H, PIP_R);
+        ctx!.clip();
+
+        // Clear shadow before drawing video (otherwise it bleeds inside)
+        ctx!.shadowColor  = "transparent";
+        ctx!.shadowBlur   = 0;
+        ctx!.shadowOffsetY = 0;
+
+        // Mirror + draw
+        ctx!.translate(px + PIP_W, py);
+        ctx!.scale(-1, 1);
+        ctx!.drawImage(video, 0, 0, PIP_W, PIP_H);
+
+        ctx!.restore();
+
+        // Border over the pip
+        ctx!.save();
+        ctx!.beginPath();
+        (ctx! as CanvasRenderingContext2D).roundRect(px, py, PIP_W, PIP_H, PIP_R);
+        ctx!.strokeStyle = "rgba(0,0,0,0.18)";
+        ctx!.lineWidth   = 1.5;
+        ctx!.stroke();
+        ctx!.restore();
       }
     }
 
@@ -199,7 +239,7 @@ export default function Draw() {
     ink.getContext("2d")?.clearRect(0, 0, ink.width, ink.height);
   }
 
-  // ── Status guards ──────────────────────────────────────────────────────────
+  // ── iframe guard ───────────────────────────────────────────────────────────
 
   if (status === "iframe") {
     const href = (() => {
@@ -237,7 +277,6 @@ export default function Draw() {
     <Layout>
       <div className="h-full flex flex-col p-6 gap-4" style={{ minHeight: 0 }}>
 
-        {/* Header */}
         <div className="shrink-0">
           <h2 className="text-3xl font-black uppercase tracking-tight">Draw</h2>
           <p className="text-muted-foreground font-medium mt-0.5 text-sm">
@@ -245,25 +284,24 @@ export default function Draw() {
           </p>
         </div>
 
-        {/* Canvas + toolbar row */}
         <div className="flex gap-4 flex-1 min-h-0">
 
           {/* Drawing canvas */}
-          <div className="relative flex-1 rounded-lg overflow-hidden border-2 border-border bg-black">
+          <div className="relative flex-1 rounded-lg overflow-hidden border-2 border-border bg-white">
             <canvas ref={mainCanvasRef} className="absolute inset-0 w-full h-full" />
 
             {status === "loading" && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <p className="bg-black/80 text-white px-4 py-2 rounded-md font-mono text-sm animate-pulse">
+                <p className="bg-black/10 text-black/60 px-4 py-2 rounded-md font-mono text-sm animate-pulse">
                   LOADING MEDIAPIPE…
                 </p>
               </div>
             )}
             {status === "no-camera" && (
-              <div className="absolute inset-0 flex items-center justify-center">
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div className="text-center px-6">
-                  <p className="font-bold text-[#FFE500] text-base uppercase mb-2">Camera Not Found</p>
-                  <p className="text-white/60 text-sm">Allow camera access and reload.</p>
+                  <p className="font-bold text-black/40 text-base uppercase mb-2">No camera</p>
+                  <p className="text-black/30 text-sm">Allow camera access and reload.</p>
                 </div>
               </div>
             )}
@@ -272,11 +310,7 @@ export default function Draw() {
           {/* Toolbar */}
           <div
             className="flex flex-col gap-4 items-center py-3 px-2 rounded-lg shrink-0"
-            style={{
-              background: "#111114",
-              border: "1.5px solid #2a2a2e",
-              width: 52,
-            }}
+            style={{ background: "#111114", border: "1.5px solid #2a2a2e", width: 52 }}
           >
             {/* Pen / Eraser */}
             <div className="flex flex-col gap-1 w-full items-center">
@@ -310,10 +344,10 @@ export default function Draw() {
                   style={{
                     width:           Math.max(s * 1.4, 8),
                     height:          Math.max(s * 1.4, 8),
-                    backgroundColor: tool === "eraser" ? "rgba(255,255,255,0.25)" : color,
-                    outline: brushSize === s ? `2px solid ${color === "#ffffff" ? "#aaa" : color}` : "none",
+                    backgroundColor: tool === "eraser" ? "rgba(255,255,255,0.3)" : color,
+                    outline:         brushSize === s ? `2px solid ${["#000000","#ffffff"].includes(color) ? "#888" : color}` : "none",
                     outlineOffset:   3,
-                    opacity:         brushSize === s ? 1 : 0.45,
+                    opacity:         brushSize === s ? 1 : 0.4,
                   }}
                 />
               ))}
@@ -333,19 +367,18 @@ export default function Draw() {
                     width:           26,
                     height:          26,
                     backgroundColor: c,
-                    outline: color === c && tool === "pen"
-                      ? `2px solid ${c === "#ffffff" ? "#aaa" : c}`
+                    outline:         color === c && tool === "pen"
+                      ? `2px solid ${["#000000","#ffffff"].includes(c) ? "#888" : c}`
                       : "none",
-                    outlineOffset: 2,
-                    opacity:       color === c && tool === "pen" ? 1 : 0.55,
-                    border:        c === "#ffffff" ? "1px solid rgba(255,255,255,0.25)" : undefined,
-                    transform:     color === c && tool === "pen" ? "scale(1.15)" : undefined,
+                    outlineOffset:   2,
+                    opacity:         color === c && tool === "pen" ? 1 : 0.55,
+                    border:          c === "#000000" ? "1px solid rgba(255,255,255,0.15)" : undefined,
+                    transform:       color === c && tool === "pen" ? "scale(1.15)" : undefined,
                   }}
                 />
               ))}
             </div>
 
-            {/* Clear — pinned to bottom */}
             <div className="mt-auto">
               <button
                 onClick={clearCanvas}
