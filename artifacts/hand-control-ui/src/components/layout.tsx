@@ -69,7 +69,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                       src={item.img}
                       alt={item.label}
                       className="w-4 h-4 relative z-10 object-contain"
-                      style={{ filter: isActive ? "brightness(0)" : "brightness(0) invert(0.6)" }}
+                      style={{ filter: isActive ? "brightness(0)" : "invert(1) opacity(0.5)" }}
                     />
                     <span className="relative z-10">{item.label}</span>
                   </div>
