@@ -70,6 +70,7 @@ export default function Draw() {
 
       const W = canvas!.offsetWidth;
       const H = canvas!.offsetHeight;
+      if (!W || !H) return;
       if (canvas!.width !== W || canvas!.height !== H) {
         canvas!.width  = W;
         canvas!.height = H;
@@ -77,9 +78,13 @@ export default function Draw() {
         if (ink && (ink.width !== W || ink.height !== H)) {
           const tmp = document.createElement("canvas");
           tmp.width = W; tmp.height = H;
-          tmp.getContext("2d")?.drawImage(ink, 0, 0, W, H);
+          if (ink.width > 0 && ink.height > 0) {
+            tmp.getContext("2d")?.drawImage(ink, 0, 0, W, H);
+          }
           ink.width = W; ink.height = H;
-          ink.getContext("2d")?.drawImage(tmp, 0, 0);
+          if (tmp.width > 0 && tmp.height > 0) {
+            ink.getContext("2d")?.drawImage(tmp, 0, 0);
+          }
         }
       }
 
