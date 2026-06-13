@@ -174,8 +174,11 @@ export default function Draw() {
       const frame = frameRef.current;
       if (frame && frame.hands.length > 0) {
         const hand    = frame.hands[0];
-        const tip     = hand.landmarks[8];
-        const isPoint = hand.gesture === "point";
+        const tip     = hand.landmarks[8];  // index tip
+        const pip     = hand.landmarks[6];  // index middle joint
+        // Lenient pen-down: index tip is above its middle joint (finger extended)
+        // regardless of what the other fingers are doing
+        const isPoint = tip.y < pip.y - 0.01;
         const rawX    = (1 - tip.x) * W;
         const rawY    = tip.y * H;
         const hcolor  = hand.handedness === "Left" ? "#e5a000" : "#4f46e5";
