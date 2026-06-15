@@ -174,6 +174,17 @@ export default function Draw() {
     ink.getContext("2d")?.clearRect(0, 0, ink.width, ink.height);
   }
 
+  function fillCanvas() {
+    pushUndo();
+    const ink = inkCanvasRef.current;
+    if (!ink) return;
+    const ctx = ink.getContext("2d");
+    if (!ctx) return;
+    ctx.globalCompositeOperation = "source-over";
+    ctx.fillStyle = colorRef.current;
+    ctx.fillRect(0, 0, ink.width, ink.height);
+  }
+
   useEffect(() => {
     if (status === "iframe") return;
     const canvas = mainCanvasRef.current;
@@ -522,11 +533,33 @@ export default function Draw() {
   return (
     <Layout>
       <div className="h-full flex flex-col p-6 gap-4" style={{ minHeight: 0 }}>
-        <div className="shrink-0">
-          <h2 className="text-3xl font-black uppercase tracking-tight">Draw</h2>
-          <p className="text-muted-foreground font-medium mt-0.5 text-sm">
-            ☝ Point to paint · lift finger to commit shapes
-          </p>
+        <div className="shrink-0 flex items-center justify-between">
+          <div>
+            <h2 className="text-3xl font-black uppercase tracking-tight">Draw</h2>
+            <p className="text-muted-foreground font-medium mt-0.5 text-sm">
+              ☝ Point to paint · lift finger to commit shapes
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={fillCanvas}
+              className="flex items-center gap-2 px-4 py-2 rounded-md text-sm font-bold uppercase tracking-wider transition-all hover:brightness-110 active:scale-95"
+              style={{ background: color, color: color === "#ffffff" || color === "#FFE500" ? "#000" : "#fff", border: color === "#ffffff" ? "1.5px solid rgba(0,0,0,0.15)" : "none" }}
+            >
+              <PaintBucket className="w-3.5 h-3.5" />
+              Fill
+            </button>
+            <button
+              onClick={clearCanvas}
+              className="flex items-center gap-2 px-4 py-2 rounded-md text-sm font-bold uppercase tracking-wider transition-all"
+              style={{ background: "rgba(239,68,68,0.15)", color: "rgb(239,68,68)", border: "1px solid rgba(239,68,68,0.3)" }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(239,68,68,0.25)"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(239,68,68,0.15)"; }}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Clear
+            </button>
+          </div>
         </div>
 
         <div className="flex gap-4 flex-1 min-h-0">
