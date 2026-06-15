@@ -1,7 +1,11 @@
 import { useRef, useEffect, useState } from "react";
 import { useHandTracker } from "@/lib/hand-api";
 import { Layout } from "@/components/layout";
-import { Trash2, Eraser, Paintbrush, ExternalLink, Highlighter, Sparkles, Undo2 } from "lucide-react";
+import {
+  Trash2, Eraser, Paintbrush, ExternalLink,
+  Highlighter, Sparkles, Undo2,
+  Minus, Square, Circle, PaintBucket,
+} from "lucide-react";
 
 const HAND_CONNECTIONS = [
   [0, 1], [1, 2], [2, 3], [3, 4],
@@ -24,14 +28,89 @@ const PIP_H = 140;
 const PIP_R = 10;
 const PIP_M = 14;
 
-type Tool = "pen" | "highlighter" | "spray" | "eraser";
+type Tool = "pen" | "highlighter" | "spray" | "line" | "rect" | "circle" | "fill" | "eraser";
 
 const TOOL_DEFS: { id: Tool; label: string; Icon: React.ElementType }[] = [
-  { id: "pen",         label: "Pen",         Icon: Paintbrush  },
+  { id: "pen",         label: "Pen",         Icon: Paintbrush   },
   { id: "highlighter", label: "Highlighter", Icon: Highlighter  },
   { id: "spray",       label: "Spray",       Icon: Sparkles     },
+  { id: "line",        label: "Line",        Icon: Minus        },
+  { id: "rect",        label: "Rectangle",   Icon: Square       },
+  { id: "circle",      label: "Circle",      Icon: Circle       },
+  { id: "fill",        label: "Fill",        Icon: PaintBucket  },
   { id: "eraser",      label: "Eraser",      Icon: Eraser       },
 ];
+
+const SHAPE_TOOLS: Tool[] = ["line", "rect", "circle"];
+
+// ── Flood fill ─────────────────────────────────────────────────────────────
+function floodFill(
+  inkCanvas: HTMLCanvasElement,
+  mainCanvas: HTMLCanvasElement,
+  startX: number,
+  startY: number,
+  fillColorHex: string,
+) {
+  const w = inkCanvas.width;
+  const h = inkCanvas.height;
+
+  // Composite ink over white into a temp canvas so we fill what the user sees
+  const tmp = document.createElement("canvas");
+  tmp.width = w; tmp.height = h;
+  const tmpCtx = tmp.getContext("2d")!;
+  tmpCtx.fillStyle = "#ffffff";
+  tmpCtx.fillRect(0, 0, w, h);
+  tmpCtx.drawImage(inkCanvas, 0, 0);
+
+  const imgData = tmpCtx.getImageData(0, 0, w, h);
+  const data    = imgData.data;
+
+  const sx = Math.max(0, Math.min(w - 1, Math.round(startX)));
+  const sy = Math.max(0, Math.min(h - 1, Math.round(startY)));
+  const si = (sy * w + sx) * 4;
+  const tR = data[si], tG = data[si + 1], tB = data[si + 2];
+
+  // Parse fill colour
+  const fc = document.createElement("canvas");
+  fc.width = fc.height = 1;
+  const fCtx = fc.getContext("2d")!;
+  fCtx.fillStyle = fillColorHex;
+  fCtx.fillRect(0, 0, 1, 1);
+  const fd   = fCtx.getImageData(0, 0, 1, 1).data;
+  const fR = fd[0], fG = fd[1], fB = fd[2];
+
+  if (tR === fR && tG === fG && tB === fB) return;
+
+  const tol = 40;
+  const match = (i: number) =>
+    Math.abs(data[i]     - tR) <= tol &&
+    Math.abs(data[i + 1] - tG) <= tol &&
+    Math.abs(data[i + 2] - tB) <= tol;
+
+  const visited = new Uint8Array(w * h);
+  const stack   = [sx + sy * w];
+
+  while (stack.length) {
+    const pos = stack.pop()!;
+    const x   = pos % w;
+    const y   = (pos - x) / w;
+    if (x < 0 || x >= w || y < 0 || y >= h) continue;
+    if (visited[pos]) continue;
+    const pi = pos * 4;
+    if (!match(pi)) continue;
+    visited[pos] = 1;
+    data[pi]     = fR;
+    data[pi + 1] = fG;
+    data[pi + 2] = fB;
+    data[pi + 3] = 255;
+    stack.push(pos + 1, pos - 1, pos + w, pos - w);
+  }
+
+  // Write result back to ink canvas
+  const inkCtx = inkCanvas.getContext("2d")!;
+  inkCtx.clearRect(0, 0, w, h);
+  inkCtx.putImageData(imgData, 0, 0);
+}
 
 export default function Draw() {
   const { latestFrame, videoRef, status } = useHandTracker();
@@ -53,17 +132,14 @@ export default function Draw() {
   brushRef.current  = brushSize;
   toolRef.current   = tool;
 
-  // Smooth cursor position
-  const smoothRef = useRef<{ x: number; y: number } | null>(null);
-  // Last committed ink point (for line drawing)
-  const lastPtRef = useRef<{ x: number; y: number } | null>(null);
-  // Point buffer for bezier smoothing
-  const ptBufRef  = useRef<{ x: number; y: number }[]>([]);
-  // Was pointing last frame?
-  const wasPointRef = useRef(false);
-
-  // Undo stack — stores ImageData snapshots of the ink canvas
-  const undoStackRef = useRef<ImageData[]>([]);
+  const smoothRef      = useRef<{ x: number; y: number } | null>(null);
+  const lastPtRef      = useRef<{ x: number; y: number } | null>(null);
+  const ptBufRef       = useRef<{ x: number; y: number }[]>([]);
+  const wasPointRef    = useRef(false);
+  const shapeStartRef  = useRef<{ x: number; y: number } | null>(null);
+  const shapeLastRef   = useRef<{ x: number; y: number } | null>(null);
+  const fillDoneRef    = useRef(false);
+  const undoStackRef   = useRef<ImageData[]>([]);
 
   useEffect(() => {
     const ink = document.createElement("canvas");
@@ -84,7 +160,7 @@ export default function Draw() {
   }
 
   function undo() {
-    const ink = inkCanvasRef.current;
+    const ink  = inkCanvasRef.current;
     if (!ink) return;
     const snap = undoStackRef.current.pop();
     if (!snap) return;
@@ -100,11 +176,64 @@ export default function Draw() {
 
   useEffect(() => {
     if (status === "iframe") return;
-
     const canvas = mainCanvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
+
+    // ── helpers ──────────────────────────────────────────────────────────────
+    function applyStrokeStyle(inkCtx: CanvasRenderingContext2D, col: string, size: number) {
+      inkCtx.globalCompositeOperation = "source-over";
+      inkCtx.strokeStyle = col;
+      inkCtx.lineWidth   = size;
+      inkCtx.lineCap     = "round";
+      inkCtx.lineJoin    = "round";
+      inkCtx.setLineDash([]);
+    }
+
+    function commitShape(inkCanvas: HTMLCanvasElement, from: {x:number;y:number}, to: {x:number;y:number}, t: Tool, col: string, size: number) {
+      const inkCtx = inkCanvas.getContext("2d");
+      if (!inkCtx) return;
+      applyStrokeStyle(inkCtx, col, size);
+      if (t === "line") {
+        inkCtx.beginPath();
+        inkCtx.moveTo(from.x, from.y);
+        inkCtx.lineTo(to.x, to.y);
+        inkCtx.stroke();
+      } else if (t === "rect") {
+        inkCtx.strokeRect(from.x, from.y, to.x - from.x, to.y - from.y);
+      } else if (t === "circle") {
+        const rx = Math.max(1, Math.abs(to.x - from.x) / 2);
+        const ry = Math.max(1, Math.abs(to.y - from.y) / 2);
+        const cx = (from.x + to.x) / 2;
+        const cy = (from.y + to.y) / 2;
+        inkCtx.beginPath();
+        inkCtx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+        inkCtx.stroke();
+      }
+    }
+
+    function drawPreview(c: CanvasRenderingContext2D, from: {x:number;y:number}, to: {x:number;y:number}, t: Tool, col: string, size: number) {
+      c.save();
+      c.strokeStyle = col;
+      c.lineWidth   = size;
+      c.lineCap     = "round";
+      c.lineJoin    = "round";
+      c.setLineDash([7, 5]);
+      c.globalAlpha = 0.75;
+      if (t === "line") {
+        c.beginPath(); c.moveTo(from.x, from.y); c.lineTo(to.x, to.y); c.stroke();
+      } else if (t === "rect") {
+        c.strokeRect(from.x, from.y, to.x - from.x, to.y - from.y);
+      } else if (t === "circle") {
+        const rx = Math.max(1, Math.abs(to.x - from.x) / 2);
+        const ry = Math.max(1, Math.abs(to.y - from.y) / 2);
+        const cx = (from.x + to.x) / 2;
+        const cy = (from.y + to.y) / 2;
+        c.beginPath(); c.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); c.stroke();
+      }
+      c.restore();
+    }
 
     function drawSpray(inkCtx: CanvasRenderingContext2D, cx: number, cy: number, size: number, col: string) {
       const density = Math.max(30, size * 3);
@@ -114,23 +243,21 @@ export default function Draw() {
       for (let i = 0; i < density; i++) {
         const angle = Math.random() * Math.PI * 2;
         const r     = Math.sqrt(Math.random()) * radius;
-        const x     = cx + Math.cos(angle) * r;
-        const y     = cy + Math.sin(angle) * r;
-        const dotR  = Math.random() * 1.2 + 0.3;
         inkCtx.beginPath();
-        inkCtx.arc(x, y, dotR, 0, Math.PI * 2);
+        inkCtx.arc(cx + Math.cos(angle) * r, cy + Math.sin(angle) * r, Math.random() * 1.2 + 0.3, 0, Math.PI * 2);
         inkCtx.fill();
       }
     }
 
-    function drawHighlighter(inkCtx: CanvasRenderingContext2D, from: { x: number; y: number }, to: { x: number; y: number }, size: number, col: string) {
+    function drawHighlighter(inkCtx: CanvasRenderingContext2D, from: {x:number;y:number}, to: {x:number;y:number}, size: number, col: string) {
       inkCtx.save();
       inkCtx.globalCompositeOperation = "source-over";
-      inkCtx.globalAlpha  = 0.28;
-      inkCtx.lineCap      = "square";
-      inkCtx.lineJoin     = "round";
-      inkCtx.strokeStyle  = col;
-      inkCtx.lineWidth    = size * 5;
+      inkCtx.globalAlpha = 0.28;
+      inkCtx.lineCap     = "square";
+      inkCtx.lineJoin    = "round";
+      inkCtx.strokeStyle = col;
+      inkCtx.lineWidth   = size * 5;
+      inkCtx.setLineDash([]);
       inkCtx.beginPath();
       inkCtx.moveTo(from.x, from.y);
       inkCtx.lineTo(to.x, to.y);
@@ -138,6 +265,7 @@ export default function Draw() {
       inkCtx.restore();
     }
 
+    // ── render loop ──────────────────────────────────────────────────────────
     function render() {
       rafRef.current = requestAnimationFrame(render);
 
@@ -152,43 +280,35 @@ export default function Draw() {
         if (ink && (ink.width !== W || ink.height !== H)) {
           const tmp = document.createElement("canvas");
           tmp.width = W; tmp.height = H;
-          if (ink.width > 0 && ink.height > 0) {
-            tmp.getContext("2d")?.drawImage(ink, 0, 0, W, H);
-          }
+          if (ink.width > 0 && ink.height > 0) tmp.getContext("2d")?.drawImage(ink, 0, 0, W, H);
           ink.width = W; ink.height = H;
-          if (tmp.width > 0 && tmp.height > 0) {
-            ink.getContext("2d")?.drawImage(tmp, 0, 0);
-          }
+          if (tmp.width > 0 && tmp.height > 0) ink.getContext("2d")?.drawImage(tmp, 0, 0);
         }
       }
 
-      // 1. White background
+      // 1. Background
       ctx!.fillStyle = "#ffffff";
       ctx!.fillRect(0, 0, W, H);
 
-      // 2. Ink strokes
+      // 2. Ink layer
       const ink = inkCanvasRef.current;
       if (ink) ctx!.drawImage(ink, 0, 0);
 
-      // 3. Hand + drawing
+      // 3. Hand + tools
       const frame = frameRef.current;
       if (frame && frame.hands.length > 0) {
-        const hand    = frame.hands[0];
-        const tip     = hand.landmarks[8];  // index tip
-        const lm      = hand.landmarks;
-        // Pen-down: index finger is extended in any direction.
-        // Measure tip distance from wrist vs knuckle distance from wrist —
-        // if the tip is significantly further out, the finger is extended.
+        const hand = frame.hands[0];
+        const tip  = hand.landmarks[8];
+        const lm   = hand.landmarks;
+
         const d = (a: typeof tip, b: typeof tip) =>
           Math.hypot(a.x - b.x, a.y - b.y, (a.z ?? 0) - (b.z ?? 0));
-        const tipToWrist = d(lm[8], lm[0]);
-        const mcpToWrist = d(lm[5], lm[0]);
-        const isPoint = tipToWrist > mcpToWrist * 1.25;
-        const rawX    = (1 - tip.x) * W;
-        const rawY    = tip.y * H;
-        const hcolor  = hand.handedness === "Left" ? "#e5a000" : "#4f46e5";
+        const isPoint = d(lm[8], lm[0]) > d(lm[5], lm[0]) * 1.25;
 
-        // Exponential smoothing for cursor position
+        const rawX  = (1 - tip.x) * W;
+        const rawY  = tip.y * H;
+        const hcolor = hand.handedness === "Left" ? "#e5a000" : "#4f46e5";
+
         const ALPHA = 0.45;
         if (!smoothRef.current) smoothRef.current = { x: rawX, y: rawY };
         smoothRef.current.x = ALPHA * rawX + (1 - ALPHA) * smoothRef.current.x;
@@ -196,77 +316,96 @@ export default function Draw() {
         const tx = smoothRef.current.x;
         const ty = smoothRef.current.y;
 
-        const inkCtx = ink?.getContext("2d") ?? null;
-        const currentTool = toolRef.current;
+        const inkCtx       = ink?.getContext("2d") ?? null;
+        const currentTool  = toolRef.current;
         const currentColor = colorRef.current;
-        const currentSize = brushRef.current;
+        const currentSize  = brushRef.current;
+        const isShape      = SHAPE_TOOLS.includes(currentTool);
 
-        if (isPoint && inkCtx) {
-          // Push undo snapshot on stroke start
+        if (isPoint) {
+          // ── Stroke start ────────────────────────────────────────────────
           if (!wasPointRef.current) {
-            pushUndo();
-            ptBufRef.current = [];
-            lastPtRef.current = { x: tx, y: ty };
+            if (currentTool === "fill") {
+              pushUndo();
+              if (ink && canvas) floodFill(ink, canvas, tx, ty, currentColor);
+              fillDoneRef.current = true;
+            } else if (isShape) {
+              pushUndo();
+              shapeStartRef.current = { x: tx, y: ty };
+            } else {
+              pushUndo();
+              ptBufRef.current  = [];
+              lastPtRef.current = { x: tx, y: ty };
+            }
           }
 
-          if (currentTool === "spray") {
-            drawSpray(inkCtx, tx, ty, currentSize, currentColor);
-          } else if (currentTool === "eraser") {
-            const lp = lastPtRef.current;
-            if (lp) {
-              inkCtx.beginPath();
-              inkCtx.globalCompositeOperation = "destination-out";
-              inkCtx.strokeStyle = "rgba(0,0,0,1)";
-              inkCtx.lineWidth   = currentSize * 4;
-              inkCtx.lineCap     = "round";
-              inkCtx.lineJoin    = "round";
-              inkCtx.moveTo(lp.x, lp.y);
-              inkCtx.lineTo(tx, ty);
-              inkCtx.stroke();
-              inkCtx.globalCompositeOperation = "source-over";
+          if (isShape) {
+            shapeLastRef.current = { x: tx, y: ty };
+            // Preview on main canvas
+            if (shapeStartRef.current) {
+              drawPreview(ctx!, shapeStartRef.current, { x: tx, y: ty }, currentTool, currentColor, currentSize);
             }
-            lastPtRef.current = { x: tx, y: ty };
-          } else if (currentTool === "highlighter") {
-            const lp = lastPtRef.current;
-            if (lp) drawHighlighter(inkCtx, lp, { x: tx, y: ty }, currentSize, currentColor);
-            lastPtRef.current = { x: tx, y: ty };
-          } else {
-            // Pen — bezier-smoothed via point buffer
-            const buf = ptBufRef.current;
-            buf.push({ x: tx, y: ty });
-            if (buf.length > 6) buf.shift();
-
-            if (buf.length >= 2) {
-              inkCtx.globalCompositeOperation = "source-over";
-              inkCtx.strokeStyle = currentColor;
-              inkCtx.lineWidth   = currentSize;
-              inkCtx.lineCap     = "round";
-              inkCtx.lineJoin    = "round";
-              inkCtx.beginPath();
-              inkCtx.moveTo(buf[0].x, buf[0].y);
-
-              if (buf.length === 2) {
-                inkCtx.lineTo(buf[1].x, buf[1].y);
-              } else {
-                for (let i = 1; i < buf.length - 1; i++) {
-                  const mx = (buf[i].x + buf[i + 1].x) / 2;
-                  const my = (buf[i].y + buf[i + 1].y) / 2;
-                  inkCtx.quadraticCurveTo(buf[i].x, buf[i].y, mx, my);
-                }
-                inkCtx.lineTo(buf[buf.length - 1].x, buf[buf.length - 1].y);
+          } else if (currentTool !== "fill" && inkCtx) {
+            if (currentTool === "spray") {
+              drawSpray(inkCtx, tx, ty, currentSize, currentColor);
+            } else if (currentTool === "eraser") {
+              const lp = lastPtRef.current;
+              if (lp) {
+                inkCtx.beginPath();
+                inkCtx.globalCompositeOperation = "destination-out";
+                inkCtx.strokeStyle = "rgba(0,0,0,1)";
+                inkCtx.lineWidth   = currentSize * 4;
+                inkCtx.lineCap     = "round";
+                inkCtx.lineJoin    = "round";
+                inkCtx.setLineDash([]);
+                inkCtx.moveTo(lp.x, lp.y);
+                inkCtx.lineTo(tx, ty);
+                inkCtx.stroke();
+                inkCtx.globalCompositeOperation = "source-over";
               }
-              inkCtx.stroke();
-              // Keep last 2 points for continuity
-              ptBufRef.current = buf.slice(-2);
+              lastPtRef.current = { x: tx, y: ty };
+            } else if (currentTool === "highlighter") {
+              const lp = lastPtRef.current;
+              if (lp) drawHighlighter(inkCtx, lp, { x: tx, y: ty }, currentSize, currentColor);
+              lastPtRef.current = { x: tx, y: ty };
+            } else {
+              // Pen — bezier smoothing
+              const buf = ptBufRef.current;
+              buf.push({ x: tx, y: ty });
+              if (buf.length > 6) buf.shift();
+              if (buf.length >= 2) {
+                applyStrokeStyle(inkCtx, currentColor, currentSize);
+                inkCtx.beginPath();
+                inkCtx.moveTo(buf[0].x, buf[0].y);
+                if (buf.length === 2) {
+                  inkCtx.lineTo(buf[1].x, buf[1].y);
+                } else {
+                  for (let i = 1; i < buf.length - 1; i++) {
+                    const mx = (buf[i].x + buf[i + 1].x) / 2;
+                    const my = (buf[i].y + buf[i + 1].y) / 2;
+                    inkCtx.quadraticCurveTo(buf[i].x, buf[i].y, mx, my);
+                  }
+                  inkCtx.lineTo(buf[buf.length - 1].x, buf[buf.length - 1].y);
+                }
+                inkCtx.stroke();
+                ptBufRef.current = buf.slice(-2);
+              }
             }
           }
 
           wasPointRef.current = true;
         } else {
-          smoothRef.current = null;
-          lastPtRef.current = null;
-          ptBufRef.current  = [];
-          wasPointRef.current = false;
+          // ── Gesture released — commit shapes ──────────────────────────
+          if (wasPointRef.current && isShape && shapeStartRef.current && shapeLastRef.current && ink) {
+            commitShape(ink, shapeStartRef.current, shapeLastRef.current, currentTool, currentColor, currentSize);
+          }
+          smoothRef.current   = null;
+          lastPtRef.current   = null;
+          ptBufRef.current    = [];
+          shapeStartRef.current = null;
+          shapeLastRef.current  = null;
+          fillDoneRef.current   = false;
+          wasPointRef.current   = false;
         }
 
         // Skeleton
@@ -274,8 +413,7 @@ export default function Draw() {
         ctx!.strokeStyle = `${hcolor}cc`;
         ctx!.lineCap     = "round";
         HAND_CONNECTIONS.forEach(([a, b]) => {
-          const s = hand.landmarks[a];
-          const e = hand.landmarks[b];
+          const s = hand.landmarks[a]; const e = hand.landmarks[b];
           if (!s || !e) return;
           ctx!.beginPath();
           ctx!.moveTo((1 - s.x) * W, s.y * H);
@@ -283,55 +421,59 @@ export default function Draw() {
           ctx!.stroke();
         });
 
-        // Landmark dots
-        hand.landmarks.forEach((lm, i) => {
-          const r   = i === 8 ? 6 : 4;
-          const x   = (1 - lm.x) * W;
-          const y   = lm.y * H;
-          ctx!.beginPath();
-          ctx!.arc(x, y, r, 0, Math.PI * 2);
-          ctx!.fillStyle = i === 8 ? hcolor : "#ffffff";
-          ctx!.fill();
+        hand.landmarks.forEach((lmk, i) => {
+          const x = (1 - lmk.x) * W, y = lmk.y * H;
+          ctx!.beginPath(); ctx!.arc(x, y, i === 8 ? 6 : 4, 0, Math.PI * 2);
+          ctx!.fillStyle   = i === 8 ? hcolor : "#ffffff"; ctx!.fill();
           ctx!.strokeStyle = i === 8 ? "rgba(0,0,0,0.5)" : hcolor;
-          ctx!.lineWidth   = 1.5;
-          ctx!.stroke();
+          ctx!.lineWidth   = 1.5; ctx!.stroke();
         });
 
         // Cursor
         const isEraser    = currentTool === "eraser";
         const isHighlight = currentTool === "highlighter";
+        const isFill      = currentTool === "fill";
         const cursorColor = isEraser ? "rgba(80,80,80,0.7)" : currentColor;
-        const cursorR     = isEraser   ? currentSize * 2
-                          : isHighlight ? currentSize * 2.5
-                          : Math.max(currentSize * 0.65, 6);
+        const cursorR     = isEraser ? currentSize * 2 : isHighlight ? currentSize * 2.5 : Math.max(currentSize * 0.65, 6);
 
         ctx!.save();
         ctx!.globalAlpha = isPoint ? 1 : 0.45;
-        if (!isEraser) {
-          ctx!.shadowColor = cursorColor;
-          ctx!.shadowBlur  = isPoint ? 14 : 4;
-        }
+        if (!isEraser && !isFill) { ctx!.shadowColor = cursorColor; ctx!.shadowBlur = isPoint ? 14 : 4; }
         ctx!.beginPath();
         if (isHighlight) {
           ctx!.rect(tx - cursorR, ty - cursorR * 0.4, cursorR * 2, cursorR * 0.8);
+        } else if (isFill) {
+          ctx!.arc(tx, ty, 8, 0, Math.PI * 2);
         } else {
           ctx!.arc(tx, ty, cursorR, 0, Math.PI * 2);
         }
         ctx!.strokeStyle = cursorColor;
         ctx!.lineWidth   = 2;
         ctx!.stroke();
-        if (isPoint) {
+        if (isPoint && !isFill) {
           ctx!.globalAlpha = isHighlight ? 0.18 : 0.1;
-          ctx!.fillStyle   = cursorColor;
-          ctx!.fill();
+          ctx!.fillStyle   = cursorColor; ctx!.fill();
+        }
+        if (isFill && isPoint) {
+          ctx!.globalAlpha = 0.7;
+          ctx!.fillStyle   = cursorColor; ctx!.fill();
         }
         ctx!.restore();
 
       } else {
-        smoothRef.current   = null;
-        lastPtRef.current   = null;
-        ptBufRef.current    = [];
-        wasPointRef.current = false;
+        if (wasPointRef.current) {
+          const currentTool = toolRef.current;
+          if (SHAPE_TOOLS.includes(currentTool) && shapeStartRef.current && shapeLastRef.current && ink) {
+            commitShape(ink, shapeStartRef.current, shapeLastRef.current, currentTool, colorRef.current, brushRef.current);
+          }
+        }
+        smoothRef.current     = null;
+        lastPtRef.current     = null;
+        ptBufRef.current      = [];
+        shapeStartRef.current = null;
+        shapeLastRef.current  = null;
+        fillDoneRef.current   = false;
+        wasPointRef.current   = false;
       }
 
       // 4. PiP camera
@@ -339,28 +481,15 @@ export default function Draw() {
       if (video && video.readyState >= 2) {
         const px = W - PIP_W - PIP_M;
         const py = H - PIP_H - PIP_M;
-
         ctx!.save();
-        ctx!.shadowColor   = "rgba(0,0,0,0.35)";
-        ctx!.shadowBlur    = 12;
-        ctx!.shadowOffsetY = 3;
-        ctx!.beginPath();
-        (ctx! as CanvasRenderingContext2D).roundRect(px, py, PIP_W, PIP_H, PIP_R);
-        ctx!.clip();
-        ctx!.shadowColor   = "transparent";
-        ctx!.shadowBlur    = 0;
-        ctx!.shadowOffsetY = 0;
-        ctx!.translate(px + PIP_W, py);
-        ctx!.scale(-1, 1);
-        ctx!.drawImage(video, 0, 0, PIP_W, PIP_H);
+        ctx!.shadowColor = "rgba(0,0,0,0.35)"; ctx!.shadowBlur = 12; ctx!.shadowOffsetY = 3;
+        ctx!.beginPath(); (ctx! as CanvasRenderingContext2D).roundRect(px, py, PIP_W, PIP_H, PIP_R); ctx!.clip();
+        ctx!.shadowColor = "transparent"; ctx!.shadowBlur = 0; ctx!.shadowOffsetY = 0;
+        ctx!.translate(px + PIP_W, py); ctx!.scale(-1, 1); ctx!.drawImage(video, 0, 0, PIP_W, PIP_H);
         ctx!.restore();
-
         ctx!.save();
-        ctx!.beginPath();
-        (ctx! as CanvasRenderingContext2D).roundRect(px, py, PIP_W, PIP_H, PIP_R);
-        ctx!.strokeStyle = "rgba(0,0,0,0.18)";
-        ctx!.lineWidth   = 1.5;
-        ctx!.stroke();
+        ctx!.beginPath(); (ctx! as CanvasRenderingContext2D).roundRect(px, py, PIP_W, PIP_H, PIP_R);
+        ctx!.strokeStyle = "rgba(0,0,0,0.18)"; ctx!.lineWidth = 1.5; ctx!.stroke();
         ctx!.restore();
       }
     }
@@ -370,9 +499,7 @@ export default function Draw() {
   }, [status, videoRef]);
 
   if (status === "iframe") {
-    const href = (() => {
-      try { return window.location.href.split("/__replco")[0]; } catch { return "/"; }
-    })();
+    const href = (() => { try { return window.location.href.split("/__replco")[0]; } catch { return "/"; } })();
     return (
       <Layout>
         <div className="h-full flex items-center justify-center">
@@ -380,14 +507,11 @@ export default function Draw() {
             <div className="text-4xl mb-4">🎨</div>
             <p className="font-black text-white text-lg uppercase tracking-tight mb-2">Open in your browser</p>
             <p className="text-white/60 text-sm mb-6 font-medium leading-relaxed">
-              Camera access is blocked in the embedded preview. Open the app directly to paint with your hand.
+              Camera access is blocked in the embedded preview.
             </p>
-            <a
-              href={href} target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 bg-[#FFE500] text-black font-bold px-5 py-2.5 rounded-md text-sm uppercase tracking-wider hover:bg-[#f5dc00] transition-colors"
-            >
-              <ExternalLink className="w-4 h-4" />
-              Open App
+            <a href={href} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 bg-[#FFE500] text-black font-bold px-5 py-2.5 rounded-md text-sm uppercase tracking-wider hover:bg-[#f5dc00] transition-colors">
+              <ExternalLink className="w-4 h-4" /> Open App
             </a>
           </div>
         </div>
@@ -401,7 +525,7 @@ export default function Draw() {
         <div className="shrink-0">
           <h2 className="text-3xl font-black uppercase tracking-tight">Draw</h2>
           <p className="text-muted-foreground font-medium mt-0.5 text-sm">
-            ☝ Point to paint · change gesture to lift pen
+            ☝ Point to paint · lift finger to commit shapes
           </p>
         </div>
 
@@ -425,24 +549,18 @@ export default function Draw() {
           </div>
 
           {/* Toolbar */}
-          <div
-            className="flex flex-col gap-3 items-center py-3 px-2 rounded-lg shrink-0"
-            style={{ background: "#111114", border: "1.5px solid #2a2a2e", width: 52 }}
-          >
+          <div className="flex flex-col gap-2.5 items-center py-3 px-2 rounded-lg shrink-0 overflow-y-auto"
+            style={{ background: "#111114", border: "1.5px solid #2a2a2e", width: 52 }}>
+
             {/* Tools */}
             <div className="flex flex-col gap-1 w-full items-center">
               {TOOL_DEFS.map(({ id, label, Icon }) => (
-                <button
-                  key={id}
-                  onClick={() => setTool(id)}
-                  title={label}
+                <button key={id} onClick={() => setTool(id)} title={label}
                   className="w-9 h-9 rounded-md flex items-center justify-center transition-all"
-                  style={
-                    tool === id
-                      ? { background: "linear-gradient(160deg,#FFE500,#FFBB00)", color: "#000" }
-                      : { background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.4)" }
-                  }
-                >
+                  style={tool === id
+                    ? { background: "linear-gradient(160deg,#FFE500,#FFBB00)", color: "#000" }
+                    : { background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.4)" }
+                  }>
                   <Icon className="w-4 h-4" />
                 </button>
               ))}
@@ -451,65 +569,43 @@ export default function Draw() {
             <div style={{ width: "100%", height: 1, background: "#2a2a2e" }} />
 
             {/* Brush sizes */}
-            <div className="flex flex-col gap-2 items-center">
-              {BRUSH_SIZES.map((s) => {
-                const dim = Math.max(s * 1.3, 6);
-                return (
-                  <button
-                    key={s}
-                    onClick={() => setBrushSize(s)}
-                    title={`${s}px`}
-                    className="rounded-full transition-all flex items-center justify-center"
-                    style={{ width: 32, height: 32 }}
-                  >
-                    <div
-                      className="rounded-full"
-                      style={{
-                        width:           dim,
-                        height:          dim,
-                        backgroundColor: tool === "eraser" ? "rgba(255,255,255,0.35)" : color,
-                        outline:         brushSize === s
-                          ? `2px solid ${color === "#000000" || color === "#ffffff" ? "#888" : color}`
-                          : "none",
-                        outlineOffset:   2,
-                        opacity:         brushSize === s ? 1 : 0.35,
-                        transition:      "all 0.15s",
-                        transform:       brushSize === s ? "scale(1.1)" : "scale(1)",
-                      }}
-                    />
-                  </button>
-                );
-              })}
+            <div className="flex flex-col gap-1 items-center">
+              {BRUSH_SIZES.map((s) => (
+                <button key={s} onClick={() => setBrushSize(s)} title={`${s}px`}
+                  className="w-8 h-8 rounded flex items-center justify-center transition-all">
+                  <div className="rounded-full transition-all"
+                    style={{
+                      width:         Math.max(s * 1.3, 5),
+                      height:        Math.max(s * 1.3, 5),
+                      backgroundColor: tool === "eraser" ? "rgba(255,255,255,0.35)" : color,
+                      outline:       brushSize === s ? `2px solid ${color === "#000000" || color === "#ffffff" ? "#888" : color}` : "none",
+                      outlineOffset: 2,
+                      opacity:       brushSize === s ? 1 : 0.35,
+                      transform:     brushSize === s ? "scale(1.1)" : "scale(1)",
+                    }} />
+                </button>
+              ))}
             </div>
 
             <div style={{ width: "100%", height: 1, background: "#2a2a2e" }} />
 
-            {/* Color palette */}
+            {/* Palette */}
             <div className="flex flex-col gap-1.5 items-center">
               {PALETTE.map((c) => {
                 const active = color === c && tool !== "eraser";
                 return (
-                  <button
-                    key={c}
-                    onClick={() => { setColor(c); if (tool === "eraser") setTool("pen"); }}
-                    title={c}
-                    className="rounded-full transition-all"
+                  <button key={c} onClick={() => { setColor(c); if (tool === "eraser") setTool("pen"); }}
+                    title={c} className="rounded-full transition-all"
                     style={{
-                      width:         26,
-                      height:        26,
+                      width: 26, height: 26,
                       backgroundColor: c,
-                      outline:       active
-                        ? `2px solid ${c === "#000000" || c === "#ffffff" ? "#888" : c}`
-                        : "none",
+                      outline:       active ? `2px solid ${c === "#000000" || c === "#ffffff" ? "#888" : c}` : "none",
                       outlineOffset: 2,
                       opacity:       active ? 1 : 0.5,
-                      border:        c === "#000000" ? "1px solid rgba(255,255,255,0.15)"
-                                   : c === "#ffffff" ? "1px solid rgba(0,0,0,0.15)"
-                                   : undefined,
+                      border:        c === "#000000" ? "1px solid rgba(255,255,255,0.15)" : c === "#ffffff" ? "1px solid rgba(0,0,0,0.2)" : undefined,
                       transform:     active ? "scale(1.18)" : "scale(1)",
                       transition:    "all 0.15s",
-                    }}
-                  />
+                    }} />
                 );
               })}
             </div>
@@ -519,24 +615,14 @@ export default function Draw() {
             {/* Undo + Clear */}
             <div className="flex flex-col gap-1 items-center">
               {[
-                { Icon: Undo2,  label: "Undo",  action: undo,        hover: "rgba(99,91,246,0.2)", hoverColor: "#a5b4fc" },
-                { Icon: Trash2, label: "Clear", action: clearCanvas, hover: "rgba(239,68,68,0.2)",  hoverColor: "rgb(239,68,68)" },
-              ].map(({ Icon, label, action, hover, hoverColor }) => (
-                <button
-                  key={label}
-                  onClick={action}
-                  title={label}
+                { Icon: Undo2,  label: "Undo",  action: undo,        hover: "rgba(99,91,246,0.2)",  hc: "#a5b4fc" },
+                { Icon: Trash2, label: "Clear", action: clearCanvas, hover: "rgba(239,68,68,0.2)", hc: "rgb(239,68,68)" },
+              ].map(({ Icon, label, action, hover, hc }) => (
+                <button key={label} onClick={action} title={label}
                   className="w-9 h-9 rounded-md flex items-center justify-center transition-all"
                   style={{ background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.4)" }}
-                  onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLElement).style.background = hover;
-                    (e.currentTarget as HTMLElement).style.color = hoverColor;
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.05)";
-                    (e.currentTarget as HTMLElement).style.color = "rgba(255,255,255,0.4)";
-                  }}
-                >
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = hover; (e.currentTarget as HTMLElement).style.color = hc; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.05)"; (e.currentTarget as HTMLElement).style.color = "rgba(255,255,255,0.4)"; }}>
                   <Icon className="w-4 h-4" />
                 </button>
               ))}
