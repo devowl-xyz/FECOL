@@ -175,10 +175,15 @@ export default function Draw() {
       if (frame && frame.hands.length > 0) {
         const hand    = frame.hands[0];
         const tip     = hand.landmarks[8];  // index tip
-        const pip     = hand.landmarks[6];  // index middle joint
-        // Lenient pen-down: index tip is above its middle joint (finger extended)
-        // regardless of what the other fingers are doing
-        const isPoint = tip.y < pip.y - 0.01;
+        const lm      = hand.landmarks;
+        // Pen-down: index finger is extended in any direction.
+        // Measure tip distance from wrist vs knuckle distance from wrist —
+        // if the tip is significantly further out, the finger is extended.
+        const d = (a: typeof tip, b: typeof tip) =>
+          Math.hypot(a.x - b.x, a.y - b.y, (a.z ?? 0) - (b.z ?? 0));
+        const tipToWrist = d(lm[8], lm[0]);
+        const mcpToWrist = d(lm[5], lm[0]);
+        const isPoint = tipToWrist > mcpToWrist * 1.25;
         const rawX    = (1 - tip.x) * W;
         const rawY    = tip.y * H;
         const hcolor  = hand.handedness === "Left" ? "#e5a000" : "#4f46e5";
