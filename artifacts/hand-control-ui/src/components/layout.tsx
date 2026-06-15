@@ -3,8 +3,8 @@ import { cn } from "@/lib/utils";
 import { useHealthCheck } from "@workspace/api-client-react";
 
 const navItems = [
-  { href: "/",         label: "Control",  img: "/nav-control.png"  },
   { href: "/draw",     label: "Draw",     img: "/nav-draw.png"     },
+  { href: "/",         label: "Control",  img: "/nav-control.png"  },
   { href: "/gestures", label: "Gestures", img: "/nav-gestures.png" },
   { href: "/sessions", label: "Sessions", img: "/nav-sessions.png" },
   { href: "/settings", label: "Settings", img: "/nav-settings.png" },
