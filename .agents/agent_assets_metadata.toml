@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "-gvGBADbbiaq3IjZvyRPf"
+uri = "file://screenshots/fecol-header-logo.svg"
+type = "image"
+title = "Fecol Header Logo"
