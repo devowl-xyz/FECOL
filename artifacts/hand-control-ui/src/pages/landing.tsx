@@ -16,6 +16,15 @@ export default function Landing() {
             <img src="/logo.png" alt="Fecol" className="w-full h-full object-cover" />
           </div>
           <span className="font-black text-lg tracking-tight uppercase" style={{ color: "#f0f0e8" }}>Fecol</span>
+          <video
+            src="/made-by-devowl.mp4"
+            autoPlay
+            loop
+            muted
+            playsInline
+            className="h-8 w-auto"
+            style={{ display: "block" }}
+          />
         </div>
         <Link href="/draw">
           <button
