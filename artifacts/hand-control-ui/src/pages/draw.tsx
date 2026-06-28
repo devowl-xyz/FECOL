@@ -4,8 +4,46 @@ import { Layout } from "@/components/layout";
 import {
   Trash2, Eraser, Paintbrush, ExternalLink,
   Highlighter, Sparkles, Undo2,
-  Minus, Square, Circle, PaintBucket,
+  Minus, Square, Circle, PaintBucket, Wand2,
 } from "lucide-react";
+
+// ── 1€ Filter (adaptive jitter suppressor) ──────────────────────────────────
+// Référence: Casiez et al. 2012 "1€ Filter: A Simple Speed-based Low-pass Filter"
+// Slow motion (twitches) → heavy smoothing; fast intentional strokes → near zero lag.
+interface EuroAxis { val: number; deriv: number; t: number; }
+
+function euroAlpha(cutoff: number, dt: number) {
+  const r = 2 * Math.PI * cutoff * dt;
+  return r / (r + 1);
+}
+
+function euroStep(
+  raw: number,
+  axis: EuroAxis,
+  nowSec: number,
+  minCutoff: number,
+  beta: number,
+  dCutoff = 1.0,
+): number {
+  const dt   = Math.max(nowSec - axis.t, 0.001);
+  axis.t     = nowSec;
+  const aD   = euroAlpha(dCutoff, dt);
+  const dRaw = (raw - axis.val) / dt;
+  axis.deriv = aD * dRaw + (1 - aD) * axis.deriv;
+  const cutoff = minCutoff + beta * Math.abs(axis.deriv);
+  const a    = euroAlpha(cutoff, dt);
+  axis.val   = a * raw + (1 - a) * axis.val;
+  return axis.val;
+}
+
+// Presets: [minCutoff Hz, beta] in normalised (0-1) coordinate space
+// Higher minCutoff = less lag but less smoothing; lower beta = smoother at speed
+const SMOOTH_PRESETS: Array<{ label: string; minC: number; beta: number }> = [
+  { label: "Off",    minC: 50,  beta: 10  }, // essentially passthrough
+  { label: "Light",  minC: 2.5, beta: 4.0 },
+  { label: "Medium", minC: 1.2, beta: 2.0 },
+  { label: "Strong", minC: 0.5, beta: 0.8 },
+];
 
 const HAND_CONNECTIONS = [
   [0, 1], [1, 2], [2, 3], [3, 4],
@@ -132,7 +170,11 @@ export default function Draw() {
   brushRef.current  = brushSize;
   toolRef.current   = tool;
 
-  const smoothRef      = useRef<{ x: number; y: number } | null>(null);
+  const [smoothLevel, setSmoothLevel] = useState(2); // 0=Off 1=Light 2=Medium 3=Strong
+  const smoothLevelRef = useRef(smoothLevel);
+  smoothLevelRef.current = smoothLevel;
+
+  const euroRef  = useRef<{ x: EuroAxis; y: EuroAxis } | null>(null);
   const lastPtRef      = useRef<{ x: number; y: number } | null>(null);
   const ptBufRef       = useRef<{ x: number; y: number }[]>([]);
   const wasPointRef    = useRef(false);
@@ -320,12 +362,19 @@ export default function Draw() {
         const rawY  = tip.y * H;
         const hcolor = hand.handedness === "Left" ? "#e5a000" : "#4f46e5";
 
-        const ALPHA = 0.45;
-        if (!smoothRef.current) smoothRef.current = { x: rawX, y: rawY };
-        smoothRef.current.x = ALPHA * rawX + (1 - ALPHA) * smoothRef.current.x;
-        smoothRef.current.y = ALPHA * rawY + (1 - ALPHA) * smoothRef.current.y;
-        const tx = smoothRef.current.x;
-        const ty = smoothRef.current.y;
+        // 1€ adaptive filter — normalised coords then scale to canvas
+        const nowSec = performance.now() / 1000;
+        const preset = SMOOTH_PRESETS[smoothLevelRef.current];
+        if (!euroRef.current) {
+          euroRef.current = {
+            x: { val: 1 - tip.x, deriv: 0, t: nowSec - 0.016 },
+            y: { val: tip.y,     deriv: 0, t: nowSec - 0.016 },
+          };
+        }
+        const filtX = euroStep(1 - tip.x, euroRef.current.x, nowSec, preset.minC, preset.beta);
+        const filtY = euroStep(tip.y,     euroRef.current.y, nowSec, preset.minC, preset.beta);
+        const tx = filtX * W;
+        const ty = filtY * H;
 
         const inkCtx       = ink?.getContext("2d") ?? null;
         const currentTool  = toolRef.current;
@@ -410,9 +459,9 @@ export default function Draw() {
           if (wasPointRef.current && isShape && shapeStartRef.current && shapeLastRef.current && ink) {
             commitShape(ink, shapeStartRef.current, shapeLastRef.current, currentTool, currentColor, currentSize);
           }
-          smoothRef.current   = null;
-          lastPtRef.current   = null;
-          ptBufRef.current    = [];
+          euroRef.current       = null;
+          lastPtRef.current     = null;
+          ptBufRef.current      = [];
           shapeStartRef.current = null;
           shapeLastRef.current  = null;
           fillDoneRef.current   = false;
@@ -478,7 +527,7 @@ export default function Draw() {
             commitShape(ink, shapeStartRef.current, shapeLastRef.current, currentTool, colorRef.current, brushRef.current);
           }
         }
-        smoothRef.current     = null;
+        euroRef.current       = null;
         lastPtRef.current     = null;
         ptBufRef.current      = [];
         shapeStartRef.current = null;
@@ -659,6 +708,26 @@ export default function Draw() {
                   <Icon className="w-4 h-4" />
                 </button>
               ))}
+            </div>
+
+            <div style={{ width: "100%", height: 1, background: "#2a2a2e" }} />
+
+            {/* AI Smooth */}
+            <div className="flex flex-col items-center gap-1">
+              <button
+                title={`AI Smooth: ${SMOOTH_PRESETS[smoothLevel].label} (click to cycle)`}
+                onClick={() => setSmoothLevel(l => (l + 1) % SMOOTH_PRESETS.length)}
+                className="w-9 h-9 rounded-md flex items-center justify-center transition-all relative"
+                style={smoothLevel > 0
+                  ? { background: "linear-gradient(160deg,#625BF6,#a855f7)", color: "#fff" }
+                  : { background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.3)" }
+                }
+              >
+                <Wand2 className="w-4 h-4" />
+              </button>
+              <span className="text-[8px] font-bold uppercase tracking-wider" style={{ color: smoothLevel > 0 ? "#a78bfa" : "rgba(255,255,255,0.2)" }}>
+                {SMOOTH_PRESETS[smoothLevel].label}
+              </span>
             </div>
           </div>
         </div>
