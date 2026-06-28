@@ -17,7 +17,7 @@ export default function Landing() {
           </div>
           <span className="font-black text-lg tracking-tight uppercase" style={{ color: "#f0f0e8" }}>Fecol</span>
           <video
-            src="/made-by-devowl.mp4"
+            src="/made-by-devowl-cropped.mp4"
             autoPlay
             loop
             muted
